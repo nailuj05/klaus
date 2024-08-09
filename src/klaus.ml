@@ -1,5 +1,5 @@
 type cmpType = | Equal | Less | More | Leq | Meq
-type token = | Push of int | Pop | Puts of string | Read | Add | Sub | Mul | Div | Cmp of cmpType
+type token = | Push of int | Pop | Puts | Read | Add | Sub | Mul | Div | Cmp of cmpType
 
 let program = 
 "
@@ -40,6 +40,13 @@ let rec parser ins = function
     | "\n" -> parser [] ts
     | _ -> failwith ("Not a valid token: " ^ t)
 
+let rec codegen asm = function 
+  | t::ts -> (match t with
+    | Push n -> failwith "Push"
+    | Pop -> failwith "Pop"
+    | Puts -> failwith "Puts"
+    | _ -> failwith "not implemented yet")
+  | [] -> asm
 
-let () = tokenizer program |> parser []; ()
+let () = tokenizer program |> parser [] |> codegen ""; ()
 
