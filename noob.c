@@ -9,6 +9,9 @@ int main(int argc, const char **argv) {
   if (HasFlag(argc, argv, "run")) {
     BuildAndRunCommand("./src/klaus");
   }
+  if (HasFlag(argc, argv, "show")) {
+    BuildAndRunCommand("cat out.s");
+  }
 
   return 0;
 }
