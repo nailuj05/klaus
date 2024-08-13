@@ -1,32 +1,35 @@
-section .data
-  fdout db "%d", 10, 0
+.intel_syntax noprefix
 
-section .bss
-  result resq 1
+	.section .data
+fdout: .string "%d"
 
-section .text
-	extern printf
-	global _start
+.section .bss
+.align 8
+result: .skip 8
+
+.section .text
+.extern printf
+.global _start
 
 _start:
 	mov rax, 5
 	push rax
 	
-	; Peek Stack
+	# Peek Stack
 	mov rax, [rsp]
 	mov [result], rax
 	
-	; Align Stack
+	# Align Stack
 	mov rax, rsp
 	and rax, 0x0F
 	sub rsp, rax
 
-	; Syscall libc printf
+	# Syscall libc printf
 	mov rdi, fdout
 	mov rsi, [result]
 	call printf
 
-	; Restore Stack
+	# Restore Stack
 	add rsp, rax
 
 	mov rax, 60

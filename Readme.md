@@ -9,3 +9,7 @@ This project is build using my [noob build system](https://github.com/nailuj05/n
 You will have to build the noob.c file using your systems C compiler, then run the executable to build the main compiler using ocamlc.
 
 *Further information about the language will follow*
+
+`as xx.s -o xx.o`
+
+`ld -o xx xx.o -lc -e _start -dynamic-linker /lib64/ld-linux-x86-64.so.2`
