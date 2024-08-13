@@ -2,7 +2,7 @@
 *.cmo
 klaus
 noob
-*.s
 *.o
 out
+out.*
 
