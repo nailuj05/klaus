@@ -1,7 +1,5 @@
 # Test file
-Push 69
-Puts
 Read
-Puts
-Push 16
+Push 10
+Sub
 Puts

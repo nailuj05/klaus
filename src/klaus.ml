@@ -49,30 +49,42 @@ let rec parser ins = function
       | "\n" -> parser [] ts
       | _ -> failwith ("Not a valid token: " ^ t))
 
-let gen_push sp asm n = asm ^ "\nmov rax, " ^ string_of_int n ^ "\npush rax\n"
-let gen_pop sp asm = if sp <= 0 then failwith "stack is empty" else asm ^ "\npop rax\nnxor rax, rax\n"
+let gen_push asm n = asm ^ "\nmov rax, " ^ string_of_int n ^ "\npush rax\n"
+let gen_pop asm = asm ^ "\npop rax\nnxor rax, rax\n"
+let gen_puts asm = asm ^ "\npop rbx\nmov rsi, rbx\nmov rdi, pformat\nxor rax, rax\ncall printf\n\n"
+let gen_read asm = asm ^ "\nmov rdi, sformat\nmov rsi, num\nxor rax, rax\ncall scanf\nmov rax, [num]\npush rax\n\n"
+let gen_add asm = asm ^ "\npop rax\npop rbx\nadd rax, rbx\npush rax\n\n"
+let gen_sub asm = asm ^ "\npop rbx\npop rax\nsub rax, rbx\npush rax\n\n"
+let gen_mul asm = asm ^ "\npop rax\npop rbx\nmul rbx\npush rax\n\n"
+let gen_div asm = asm ^ "\npop rax\npop rbx\ndiv rbx\npush rax\n\n"
 
-let gen_puts sp asm =
-  if sp < 1 then failwith "stack has less than 2 elements"
-  else asm ^ "\npop rbx\nmov rsi, rbx\nmov rdi, pformat\nxor rax, rax\ncall printf\n\n"
-
-let gen_read sp asm = asm ^ "\nmov rdi, sformat\nmov rsi, num\nxor rax, rax\ncall scanf\nmov rax, [num]\npush rax\n\n"
-
-let rec codegen sp asm = function
+let rec codegen asm = function
   | t :: ts -> (
       match t with
       | Push n ->
-          let asm' = gen_push sp asm n in
-          codegen (sp + 1) asm' ts
+          let asm' = gen_push asm n in
+          codegen asm' ts
       | Pop ->
-          let asm' = gen_pop sp asm in
-          codegen (sp - 1) asm' ts
+          let asm' = gen_pop asm in
+          codegen asm' ts
       | Puts ->
-          let asm' = gen_puts sp asm in
-          codegen sp asm' ts
+          let asm' = gen_puts asm in
+          codegen asm' ts
       | Read ->
-          let asm' = gen_read sp asm in
-          codegen (sp + 1) asm' ts
+          let asm' = gen_read asm in
+          codegen asm' ts
+      | Add ->
+          let asm' = gen_add asm in
+          codegen asm' ts
+      | Sub ->
+          let asm' = gen_sub asm in
+          codegen asm' ts
+      | Mul ->
+          let asm' = gen_mul asm in
+          codegen asm' ts
+      | Div ->
+          let asm' = gen_div asm in
+          codegen asm' ts
       | _ -> failwith "not implemented yet")
   | [] -> asm
 
@@ -103,4 +115,4 @@ let handle_args : string =
 
 let () =
   let program = handle_args in
-  tokenizer program |> parser [] |> List.rev |> codegen 0 head |> assemble "out.s"
+  tokenizer program |> parser [] |> List.rev |> codegen head |> assemble "out.s"
