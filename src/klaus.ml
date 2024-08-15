@@ -4,28 +4,24 @@ type token = Push of int | Pop | Puts | Read | Add | Sub | Mul | Div | Cmp of cm
 (*ASM Header*)
 let head =
   "section .data\n\
-   format db \"%d\", 10, 0  ; Format string for printf\n\n\
+   pformat db \"%ld\", 10, 0  ; Format string for printf\n\n\
+   sformat db \"%d\", 0 ; Format string for scanf\n\
    section .bss\n\
-   result resq 1        ; Reserve space for the result\n\n\
+   result resq 1\n\n\
+   num resq 1\n\n\
    section .text\n\
    global _start\n\n\
-   puts:\n\
-   ; Prepare for calling printf\n\
-   mov [result], rax\n\
-   mov rdi, format      ; First argument: format string\n\
-   mov rsi, [result]    ; Second argument: the result\n\
-   xor rax, rax         ; Clear rax for calling printf\n\
-   call printf          ; Call printf function from C library\n\
-   ret                  ; Return from the function\n\n\
-   extern printf           ; External declaration of printf (libc)\n\n\
+   extern printf\n\n\
+   extern scanf\n\n\
    _start:\n"
 
 let tail = "mov rax, 60\nxor rdi, rdi\nsyscall"
-let program = "\nPush 5\nPush 10\nPush 16\nPuts\n"
 
 let tokenizer (program : string) : string list =
   let lines = String.trim program |> String.split_on_char '\n' in
-  List.filter (fun s -> s != "\n") lines |> List.map (fun s -> String.split_on_char ' ' s) |> List.flatten
+  List.filter (fun s -> s != "\n" && not (String.starts_with ~prefix:"#" s)) lines
+  |> List.map (fun s -> String.split_on_char ' ' s)
+  |> List.flatten
 
 let rec parser ins = function
   | [] -> ins
@@ -57,7 +53,10 @@ let gen_push sp asm n = asm ^ "\nmov rax, " ^ string_of_int n ^ "\npush rax\n"
 let gen_pop sp asm = if sp <= 0 then failwith "stack is empty" else asm ^ "\npop rax\nnxor rax, rax\n"
 
 let gen_puts sp asm =
-  if sp < 1 then failwith "stack has less than 2 elements" else asm ^ "\npop rax\nmov [result], rax\npush rax\ncall puts\n\n"
+  if sp < 1 then failwith "stack has less than 2 elements"
+  else asm ^ "\npop rbx\nmov rsi, rbx\nmov rdi, pformat\nxor rax, rax\ncall printf\n\n"
+
+let gen_read sp asm = asm ^ "\nmov rdi, sformat\nmov rsi, num\nxor rax, rax\ncall scanf\nmov rax, [num]\npush rax\n\n"
 
 let rec codegen sp asm = function
   | t :: ts -> (
@@ -71,6 +70,9 @@ let rec codegen sp asm = function
       | Puts ->
           let asm' = gen_puts sp asm in
           codegen sp asm' ts
+      | Read ->
+          let asm' = gen_read sp asm in
+          codegen (sp + 1) asm' ts
       | _ -> failwith "not implemented yet")
   | [] -> asm
 
@@ -81,10 +83,24 @@ let assemble file asm =
   match Sys.command "nasm -f elf64 -o out.o out.s" with
   | 0 -> (
       match Sys.command "ld -o out out.o -lc -e _start -dynamic-linker /lib64/ld-linux-x86-64.so.2" with
-      | 0 ->
-          Sys.command "rm -rf out.o";
-          ()
+      | 0 -> ()
       | _ -> failwith "linking failed")
   | _ -> failwith "assembly failed"
 
-let () = tokenizer program |> parser [] |> List.rev |> codegen 0 head |> assemble "out.s"
+let read_file filename =
+  let channel = open_in filename in
+  let contents = really_input_string channel (in_channel_length channel) in
+  close_in channel;
+  contents
+
+let handle_args : string =
+  if Array.length Sys.argv < 2 then (
+    Printf.printf "Usage: klaus <filename>\n";
+    failwith "")
+  else
+    let filename = Sys.argv.(1) in
+    try read_file filename with Sys_error msg -> failwith ("Error: " ^ msg ^ "\n")
+
+let () =
+  let program = handle_args in
+  tokenizer program |> parser [] |> List.rev |> codegen 0 head |> assemble "out.s"
