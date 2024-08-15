@@ -1,6 +1,6 @@
 .intel_syntax noprefix
 
-	.section .data
+.section .data
 fdout: .string "%d"
 
 .section .bss
