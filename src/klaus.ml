@@ -1,5 +1,5 @@
 type cmpType = Equal | Less | More | Leq | Meq
-type token = Push of int | Pop | Puts | Read | Add | Sub | Mul | Div | Cmp of cmpType
+type token = Push of int | Pop | Puts | Read | Add | Sub | Mul | Div | Dup | Swap | Cmp of (cmpType * string) | Label of string | End
 
 (*ASM Header*)
 let head =
@@ -16,12 +16,16 @@ let head =
    _start:\n"
 
 let tail = "mov rax, 60\nxor rdi, rdi\nsyscall"
+let align = "\nmov rbp, rsp\nand rsp, -16 \n"
+let restore = "\nmov rsp, rbp\n"
 
 let tokenizer (program : string) : string list =
   let lines = String.trim program |> String.split_on_char '\n' in
   List.filter (fun s -> s != "\n" && not (String.starts_with ~prefix:"#" s)) lines
   |> List.map (fun s -> String.split_on_char ' ' s)
   |> List.flatten
+
+let extract_label x = if String.starts_with ~prefix:":" x && String.length x > 1 then Some (String.sub x 1 (String.length x - 1)) else None
 
 let rec parser ins = function
   | [] -> ins
@@ -35,28 +39,35 @@ let rec parser ins = function
       | "Sub" -> parser (Sub :: ins) ts
       | "Mul" -> parser (Mul :: ins) ts
       | "Div" -> parser (Div :: ins) ts
+      | "Dup" -> parser (Dup :: ins) ts
+      | "Swap" -> parser (Swap :: ins) ts
       | "Cmp" -> (
           match ts with
           | t :: ts -> (
+              let label = match extract_label t with Some l -> l | None -> failwith "Not a label" in
               match t with
-              | "=" -> parser (Cmp Equal :: ins) ts
-              | "<=" -> parser (Cmp Leq :: ins) ts
-              | ">=" -> parser (Cmp Equal :: ins) ts
-              | "<" -> parser (Cmp Less :: ins) ts
-              | ">" -> parser (Cmp More :: ins) ts
+              | "=" -> parser (Cmp (Equal, label) :: ins) ts
+              | "<=" -> parser (Cmp (Leq, label) :: ins) ts
+              | ">=" -> parser (Cmp (Equal, label) :: ins) ts
+              | "<" -> parser (Cmp (Less, label) :: ins) ts
+              | ">" -> parser (Cmp (More, label) :: ins) ts
               | _ -> failwith "not a compare type")
           | _ -> failwith "compare type expected")
+      | "End" -> parser (End :: ins) ts
       | "\n" -> parser [] ts
-      | _ -> failwith ("Not a valid token: " ^ t))
+      | x -> ( match extract_label t with Some label -> parser (Label label :: ins) ts | None -> failwith "Not a valid token"))
 
 let gen_push asm n = asm ^ "\nmov rax, " ^ string_of_int n ^ "\npush rax\n"
-let gen_pop asm = asm ^ "\npop rax\nnxor rax, rax\n"
-let gen_puts asm = asm ^ "\npop rbx\nmov rsi, rbx\nmov rdi, pformat\nxor rax, rax\ncall printf\n\n"
-let gen_read asm = asm ^ "\nmov rdi, sformat\nmov rsi, num\nxor rax, rax\ncall scanf\nmov rax, [num]\npush rax\n\n"
+let gen_pop asm = asm ^ "\npop rax\nxor rax, rax\n"
+let gen_puts asm = asm ^ "\npop rbx\nmov rsi, rbx\npush rbx\n" ^ align ^ "\nmov rdi, pformat\nxor rax, rax\ncall printf\n\n" ^ restore
+let gen_read asm = asm ^ align ^ "\nmov rdi, sformat\nmov rsi, num\nxor rax, rax\ncall scanf\nmov rax, [num]\npush rax\n\n" ^ restore
 let gen_add asm = asm ^ "\npop rax\npop rbx\nadd rax, rbx\npush rax\n\n"
 let gen_sub asm = asm ^ "\npop rbx\npop rax\nsub rax, rbx\npush rax\n\n"
 let gen_mul asm = asm ^ "\npop rax\npop rbx\nmul rbx\npush rax\n\n"
 let gen_div asm = asm ^ "\npop rax\npop rbx\ndiv rbx\npush rax\n\n"
+let gen_dup asm = asm ^ "\npop rax\npush rax\npush rax\n\n"
+let gen_swap asm = asm ^ "\npop rax\npop rbx\npush rax\npush rbx\n\n"
+let gen_end asm = asm ^ "\n" ^ tail ^ "\n"
 
 let rec codegen asm = function
   | t :: ts -> (
@@ -84,6 +95,15 @@ let rec codegen asm = function
           codegen asm' ts
       | Div ->
           let asm' = gen_div asm in
+          codegen asm' ts
+      | Dup ->
+          let asm' = gen_dup asm in
+          codegen asm' ts
+      | Swap ->
+          let asm' = gen_swap asm in
+          codegen asm' ts
+      | End ->
+          let asm' = gen_end asm in
           codegen asm' ts
       | _ -> failwith "not implemented yet")
   | [] -> asm

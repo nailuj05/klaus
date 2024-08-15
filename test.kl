@@ -1,5 +1,9 @@
 # Test file
 Read
 Push 10
-Sub
+Cmp > :bigger
+Pop
+Puts
+End
+:bigger
 Puts
