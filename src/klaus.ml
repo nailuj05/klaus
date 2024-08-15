@@ -25,37 +25,46 @@ let tokenizer (program : string) : string list =
   |> List.map (fun s -> String.split_on_char ' ' s)
   |> List.flatten
 
-let extract_label x = if String.starts_with ~prefix:":" x && String.length x > 1 then Some (String.sub x 1 (String.length x - 1)) else None
+let extract_label x =
+  if String.starts_with ~prefix:":" x && String.length x > 1 && String.fold_left (fun acc c -> if c == ':' then acc + 1 else acc) 0 x == 1
+  then Some (String.sub x 1 (String.length x - 1))
+  else None
 
-let rec parser ins = function
+let rec parser ins line = function
   | [] -> ins
   | t :: ts -> (
       match t with
-      | "Push" -> ( match ts with t :: ts -> parser (Push (int_of_string t) :: ins) ts | _ -> failwith "value expected")
-      | "Pop" -> parser (Pop :: ins) ts
-      | "Puts" -> parser (Puts :: ins) ts
-      | "Read" -> parser (Read :: ins) ts
-      | "Add" -> parser (Add :: ins) ts
-      | "Sub" -> parser (Sub :: ins) ts
-      | "Mul" -> parser (Mul :: ins) ts
-      | "Div" -> parser (Div :: ins) ts
-      | "Dup" -> parser (Dup :: ins) ts
-      | "Swap" -> parser (Swap :: ins) ts
+      | "Push" -> (
+          match ts with
+          | t :: ts -> parser (Push (int_of_string t) :: ins) (line + 1) ts
+          | _ -> failwith ("value expected in line:" ^ string_of_int line))
+      | "Pop" -> parser (Pop :: ins) (line + 1) ts
+      | "Puts" -> parser (Puts :: ins) (line + 1) ts
+      | "Read" -> parser (Read :: ins) (line + 1) ts
+      | "Add" -> parser (Add :: ins) (line + 1) ts
+      | "Sub" -> parser (Sub :: ins) (line + 1) ts
+      | "Mul" -> parser (Mul :: ins) (line + 1) ts
+      | "Div" -> parser (Div :: ins) (line + 1) ts
+      | "Dup" -> parser (Dup :: ins) (line + 1) ts
+      | "Swap" -> parser (Swap :: ins) (line + 1) ts
       | "Cmp" -> (
           match ts with
           | t :: ts -> (
-              let label = match extract_label t with Some l -> l | None -> failwith "Not a label" in
+              let label = match extract_label t with Some l -> l | None -> failwith "Not a label in line:" ^ string_of_int line in
               match t with
-              | "=" -> parser (Cmp (Equal, label) :: ins) ts
-              | "<=" -> parser (Cmp (Leq, label) :: ins) ts
-              | ">=" -> parser (Cmp (Equal, label) :: ins) ts
-              | "<" -> parser (Cmp (Less, label) :: ins) ts
-              | ">" -> parser (Cmp (More, label) :: ins) ts
-              | _ -> failwith "not a compare type")
-          | _ -> failwith "compare type expected")
-      | "End" -> parser (End :: ins) ts
-      | "\n" -> parser [] ts
-      | x -> ( match extract_label t with Some label -> parser (Label label :: ins) ts | None -> failwith "Not a valid token"))
+              | "=" -> parser (Cmp (Equal, label) :: ins) (line + 1) ts
+              | "<=" -> parser (Cmp (Leq, label) :: ins) (line + 1) ts
+              | ">=" -> parser (Cmp (Equal, label) :: ins) (line + 1) ts
+              | "<" -> parser (Cmp (Less, label) :: ins) (line + 1) ts
+              | ">" -> parser (Cmp (More, label) :: ins) (line + 1) ts
+              | _ -> failwith ("not a compare type in line:" ^ string_of_int line))
+          | _ -> failwith ("compare type expected in line:" ^ string_of_int line))
+      | "End" -> parser (End :: ins) (line + 1) ts
+      | "\n" -> parser [] (line + 1) ts
+      | x -> (
+          match extract_label t with
+          | Some label -> parser (Label label :: ins) (line + 1) ts
+          | None -> failwith ("Not a valid token in line:" ^ string_of_int line)))
 
 let gen_push asm n = asm ^ "\nmov rax, " ^ string_of_int n ^ "\npush rax\n"
 let gen_pop asm = asm ^ "\npop rax\nxor rax, rax\n"
@@ -68,6 +77,7 @@ let gen_div asm = asm ^ "\npop rax\npop rbx\ndiv rbx\npush rax\n\n"
 let gen_dup asm = asm ^ "\npop rax\npush rax\npush rax\n\n"
 let gen_swap asm = asm ^ "\npop rax\npop rbx\npush rax\npush rbx\n\n"
 let gen_end asm = asm ^ "\n" ^ tail ^ "\n"
+let gen_label asm label = asm ^ "\n" ^ label ^ ":\n"
 
 let rec codegen asm = function
   | t :: ts -> (
@@ -105,6 +115,9 @@ let rec codegen asm = function
       | End ->
           let asm' = gen_end asm in
           codegen asm' ts
+      | Label label ->
+          let asm' = gen_label asm label in
+          codegen asm' ts
       | _ -> failwith "not implemented yet")
   | [] -> asm
 
@@ -135,4 +148,4 @@ let handle_args : string =
 
 let () =
   let program = handle_args in
-  tokenizer program |> parser [] |> List.rev |> codegen head |> assemble "out.s"
+  tokenizer program |> parser [] 0 |> List.rev |> codegen head |> assemble "out.s"
