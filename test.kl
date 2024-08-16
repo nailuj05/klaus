@@ -1,9 +1,10 @@
 # Test file
 Read
 Push 10
-# Cmp > :bigger
-Pop
+Cmp < :bigger
+Push 0
 Puts
 End
 :bigger
+Push 1
 Puts

@@ -1,5 +1,20 @@
-type cmpType = Equal | Less | More | Leq | Meq
-type token = Push of int | Pop | Puts | Read | Add | Sub | Mul | Div | Dup | Swap | Cmp of (cmpType * string) | Label of string | End
+type cmpType = Equal | Less | More | Leq | Beq
+
+type token =
+  | Push of int
+  | Pop
+  | Puts
+  | Read
+  | Add
+  | Sub
+  | Mul
+  | Div
+  | Dup
+  | Swap
+  | Cmp of (cmpType * string)
+  | Jmp of string
+  | End
+  | Label of string
 
 (*ASM Header*)
 let head =
@@ -49,16 +64,22 @@ let rec parser ins line = function
       | "Swap" -> parser (Swap :: ins) (line + 1) ts
       | "Cmp" -> (
           match ts with
-          | t :: ts -> (
-              let label = match extract_label t with Some l -> l | None -> failwith "Not a label in line:" ^ string_of_int line in
+          | t :: t2 :: ts -> (
+              let label = match extract_label t2 with Some l -> l | None -> failwith "Not a label in line:" ^ string_of_int line in
               match t with
               | "=" -> parser (Cmp (Equal, label) :: ins) (line + 1) ts
               | "<=" -> parser (Cmp (Leq, label) :: ins) (line + 1) ts
-              | ">=" -> parser (Cmp (Equal, label) :: ins) (line + 1) ts
+              | ">=" -> parser (Cmp (Beq, label) :: ins) (line + 1) ts
               | "<" -> parser (Cmp (Less, label) :: ins) (line + 1) ts
               | ">" -> parser (Cmp (More, label) :: ins) (line + 1) ts
               | _ -> failwith ("not a compare type in line:" ^ string_of_int line))
           | _ -> failwith ("compare type expected in line:" ^ string_of_int line))
+      | "Jmp" -> (
+          match ts with
+          | t :: ts ->
+              let label = match extract_label t with Some l -> l | None -> failwith "Not a label in line:" ^ string_of_int line in
+              parser (Jmp label :: ins) (line + 1) ts
+          | _ -> failwith "not a label")
       | "End" -> parser (End :: ins) (line + 1) ts
       | "\n" -> parser [] (line + 1) ts
       | x -> (
@@ -66,10 +87,14 @@ let rec parser ins line = function
           | Some label -> parser (Label label :: ins) (line + 1) ts
           | None -> failwith ("Not a valid token in line:" ^ string_of_int line)))
 
+let get_cmp_ins cmp label =
+  (match cmp with Equal -> "je " ^ label | Leq -> "jle " ^ label | Beq -> "jge " ^ label | Less -> "jl " ^ label | More -> "jg " ^ label)
+  ^ "\n"
+
 let gen_push asm n = asm ^ "\nmov rax, " ^ string_of_int n ^ "\npush rax\n"
 let gen_pop asm = asm ^ "\npop rax\nxor rax, rax\n"
 let gen_puts asm = asm ^ "\npop rbx\nmov rsi, rbx\npush rbx\n" ^ align ^ "\nmov rdi, pformat\nxor rax, rax\ncall printf\n\n" ^ restore
-let gen_read asm = asm ^ align ^ "\nmov rdi, sformat\nmov rsi, num\nxor rax, rax\ncall scanf\nmov rax, [num]\npush rax\n\n" ^ restore
+let gen_read asm = asm ^ align ^ "\nmov rdi, sformat\nmov rsi, num\nxor rax, rax\ncall scanf\nmov rax, [num]\n" ^ restore ^ "push rax\n\n"
 let gen_add asm = asm ^ "\npop rax\npop rbx\nadd rax, rbx\npush rax\n\n"
 let gen_sub asm = asm ^ "\npop rbx\npop rax\nsub rax, rbx\npush rax\n\n"
 let gen_mul asm = asm ^ "\npop rax\npop rbx\nmul rbx\npush rax\n\n"
@@ -78,6 +103,8 @@ let gen_dup asm = asm ^ "\npop rax\npush rax\npush rax\n\n"
 let gen_swap asm = asm ^ "\npop rax\npop rbx\npush rax\npush rbx\n\n"
 let gen_end asm = asm ^ "\n" ^ tail ^ "\n"
 let gen_label asm label = asm ^ "\n" ^ label ^ ":\n"
+let gen_cmp asm cmp label = asm ^ "\nmov rax, [rsp]\nmov rbx, [rsp + 8]\ncmp rax, rbx\n" ^ get_cmp_ins cmp label
+let gen_jmp asm label = asm ^ "\njmp " ^ label ^ "\n"
 
 let rec codegen asm = function
   | t :: ts -> (
@@ -115,10 +142,16 @@ let rec codegen asm = function
       | End ->
           let asm' = gen_end asm in
           codegen asm' ts
+      | Cmp (cmp, label) ->
+          let asm' = gen_cmp asm cmp label in
+          codegen asm' ts
+      | Jmp label ->
+          let asm' = gen_jmp asm label in
+          codegen asm' ts
       | Label label ->
           let asm' = gen_label asm label in
           codegen asm' ts
-      | _ -> failwith "not implemented yet")
+          (* | _ -> failwith "not implemented yet") *))
   | [] -> asm
 
 let assemble file asm =
