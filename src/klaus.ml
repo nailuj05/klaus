@@ -121,10 +121,10 @@ let gen_read asm =
   asm ^ align ^ "\nmov rdi, sformat\nmov rsi, num\nxor rax, rax\ncall scanf\nmov rax, [num]\n" ^ restore
   ^ "push rax\n\n"
 
-let gen_add asm = asm ^ "\nmov rax, [rsp]\nmov rbx, [rsp + 8]\nadd rax, rbx\npush rax\n\n"
-let gen_sub asm = asm ^ "\nmov rbx, [rsp]\nmov rax, [rsp + 8]\nsub rax, rbx\npush rax\n\n"
-let gen_mul asm = asm ^ "\nmov rax, [rsp]\nmov rbx, [rsp + 8]\nmul rbx\npush rax\n\n"
-let gen_div asm = asm ^ "\nmov rax, [rsp]\nmov rbx, [rsp + 8]\ndiv rbx\npush rax\n\n"
+let gen_add asm = asm ^ "\npop rax\npop rbx\nadd rax, rbx\npush rax\n\n"
+let gen_sub asm = asm ^ "\npop rbx\npop rax\nsub rax, rbx\npush rax\n\n"
+let gen_mul asm = asm ^ "\npop rax\npop rbx\nmul rbx\npush rax\n\n"
+let gen_div asm = asm ^ "\npop rax\npop rbx\ndiv rbx\npush rax\n\n"
 let gen_dup asm = asm ^ "\nmov rax, [rsp]\npush rax\n\n"
 let gen_swap asm = asm ^ "\npop rax\npop rbx\npush rax\npush rbx\n\n"
 let gen_end asm = asm ^ "\n" ^ tail ^ "\n"

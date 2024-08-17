@@ -1,0 +1,11 @@
+Push 0
+Push 1
+Push 2
+
+Add
+Puts
+
+Push 5
+Dup
+Mul
+Puts
