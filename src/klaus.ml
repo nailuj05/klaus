@@ -13,7 +13,7 @@ type token =
   | Swap
   | Cmp of (cmpType * string)
   | Jmp of string
-  | Get of int
+  | Get
   | End
   | Label of string
 
@@ -29,8 +29,7 @@ let head =
    global _start\n\n\
    extern printf\n\n\
    extern scanf\n\n\
-   _start:\n\n\
-   mov r12, rsp\n"
+   _start:\n\n"
 
 let tail = "mov rax, 60\nxor rdi, rdi\nsyscall"
 let align = "\nmov rbp, rsp\nand rsp, -16 \n"
@@ -82,7 +81,7 @@ let rec parser ins line = function
               let label = match extract_label t with Some l -> l | None -> failwith "Not a label in line:" ^ string_of_int line in
               parser (Jmp label :: ins) (line + 1) ts
           | _ -> failwith "not a label")
-      | "Get" -> ( match ts with t :: ts -> parser (Get (int_of_string t) :: ins) (line + 1) ts | _ -> failwith "Index expected")
+      | "Get" -> parser (Get :: ins) (line + 1) ts
       | "End" -> parser (End :: ins) (line + 1) ts
       | "\n" -> parser [] (line + 1) ts
       | x -> (
@@ -108,7 +107,7 @@ let gen_end asm = asm ^ "\n" ^ tail ^ "\n"
 let gen_label asm label = asm ^ "\n" ^ label ^ ":\n"
 let gen_cmp asm cmp label = asm ^ "\nmov rax, [rsp]\nmov rbx, [rsp + 8]\ncmp rax, rbx\n" ^ get_cmp_ins cmp label
 let gen_jmp asm label = asm ^ "\njmp " ^ label ^ "\n"
-let gen_get asm index = asm ^ "\nmov rax, [r12 - " ^ string_of_int ((index + 1) * 8) ^ "]\npush rax\n\n"
+let gen_get asm = asm ^ "\nmov rax, [rsp]\nmov rax, [rsp + 8 * rax]\npush rax\n\n"
 
 let rec codegen asm = function
   | t :: ts -> (
@@ -152,8 +151,8 @@ let rec codegen asm = function
       | Jmp label ->
           let asm' = gen_jmp asm label in
           codegen asm' ts
-      | Get index ->
-          let asm' = gen_get asm index in
+      | Get ->
+          let asm' = gen_get asm in
           codegen asm' ts
       | Label label ->
           let asm' = gen_label asm label in
