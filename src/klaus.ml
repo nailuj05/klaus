@@ -13,6 +13,7 @@ type token =
   | Swap
   | Cmp of (cmpType * string)
   | Jmp of string
+  | Get of int
   | End
   | Label of string
 
@@ -28,7 +29,8 @@ let head =
    global _start\n\n\
    extern printf\n\n\
    extern scanf\n\n\
-   _start:\n"
+   _start:\n\n\
+   mov r12, rsp\n"
 
 let tail = "mov rax, 60\nxor rdi, rdi\nsyscall"
 let align = "\nmov rbp, rsp\nand rsp, -16 \n"
@@ -36,7 +38,7 @@ let restore = "\nmov rsp, rbp\n"
 
 let tokenizer (program : string) : string list =
   let lines = String.trim program |> String.split_on_char '\n' in
-  List.filter (fun s -> s != "\n" && not (String.starts_with ~prefix:"#" s)) lines
+  List.filter (fun s -> s <> "" && not (String.starts_with ~prefix:"#" s)) lines
   |> List.map (fun s -> String.split_on_char ' ' s)
   |> List.flatten
 
@@ -80,12 +82,13 @@ let rec parser ins line = function
               let label = match extract_label t with Some l -> l | None -> failwith "Not a label in line:" ^ string_of_int line in
               parser (Jmp label :: ins) (line + 1) ts
           | _ -> failwith "not a label")
+      | "Get" -> ( match ts with t :: ts -> parser (Get (int_of_string t) :: ins) (line + 1) ts | _ -> failwith "Index expected")
       | "End" -> parser (End :: ins) (line + 1) ts
       | "\n" -> parser [] (line + 1) ts
       | x -> (
           match extract_label t with
           | Some label -> parser (Label label :: ins) (line + 1) ts
-          | None -> failwith ("Not a valid token in line:" ^ string_of_int line)))
+          | None -> failwith ("Not a valid token in line:" ^ string_of_int line ^ " : " ^ x)))
 
 let get_cmp_ins cmp label =
   (match cmp with Equal -> "je " ^ label | Leq -> "jle " ^ label | Beq -> "jge " ^ label | Less -> "jl " ^ label | More -> "jg " ^ label)
@@ -93,18 +96,19 @@ let get_cmp_ins cmp label =
 
 let gen_push asm n = asm ^ "\nmov rax, " ^ string_of_int n ^ "\npush rax\n"
 let gen_pop asm = asm ^ "\npop rax\nxor rax, rax\n"
-let gen_puts asm = asm ^ "\npop rbx\nmov rsi, rbx\npush rbx\n" ^ align ^ "\nmov rdi, pformat\nxor rax, rax\ncall printf\n\n" ^ restore
+let gen_puts asm = asm ^ "\nmov rsi, [rsp]\n" ^ align ^ "\nmov rdi, pformat\nxor rax, rax\ncall printf\n\n" ^ restore
 let gen_read asm = asm ^ align ^ "\nmov rdi, sformat\nmov rsi, num\nxor rax, rax\ncall scanf\nmov rax, [num]\n" ^ restore ^ "push rax\n\n"
-let gen_add asm = asm ^ "\npop rax\npop rbx\nadd rax, rbx\npush rax\n\n"
-let gen_sub asm = asm ^ "\npop rbx\npop rax\nsub rax, rbx\npush rax\n\n"
-let gen_mul asm = asm ^ "\npop rax\npop rbx\nmul rbx\npush rax\n\n"
-let gen_div asm = asm ^ "\npop rax\npop rbx\ndiv rbx\npush rax\n\n"
-let gen_dup asm = asm ^ "\npop rax\npush rax\npush rax\n\n"
+let gen_add asm = asm ^ "\nmov rax, [rsp]\nmov rbx, [rsp + 8]\nadd rax, rbx\npush rax\n\n"
+let gen_sub asm = asm ^ "\nmov rbx, [rsp]\nmov rax, [rsp + 8]\nsub rax, rbx\npush rax\n\n"
+let gen_mul asm = asm ^ "\nmov rax, [rsp]\nmov rbx, [rsp + 8]\nmul rbx\npush rax\n\n"
+let gen_div asm = asm ^ "\nmov rax, [rsp]\nmov rbx, [rsp + 8]\ndiv rbx\npush rax\n\n"
+let gen_dup asm = asm ^ "\nmov rax, [rsp]\npush rax\n\n"
 let gen_swap asm = asm ^ "\npop rax\npop rbx\npush rax\npush rbx\n\n"
 let gen_end asm = asm ^ "\n" ^ tail ^ "\n"
 let gen_label asm label = asm ^ "\n" ^ label ^ ":\n"
 let gen_cmp asm cmp label = asm ^ "\nmov rax, [rsp]\nmov rbx, [rsp + 8]\ncmp rax, rbx\n" ^ get_cmp_ins cmp label
 let gen_jmp asm label = asm ^ "\njmp " ^ label ^ "\n"
+let gen_get asm index = asm ^ "\nmov rax, [r12 - " ^ string_of_int ((index + 1) * 8) ^ "]\npush rax\n\n"
 
 let rec codegen asm = function
   | t :: ts -> (
@@ -147,6 +151,9 @@ let rec codegen asm = function
           codegen asm' ts
       | Jmp label ->
           let asm' = gen_jmp asm label in
+          codegen asm' ts
+      | Get index ->
+          let asm' = gen_get asm index in
           codegen asm' ts
       | Label label ->
           let asm' = gen_label asm label in

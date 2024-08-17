@@ -1,0 +1,10 @@
+Push 1
+Push 2
+Push 3
+
+Get 0
+Puts
+Get 1
+Puts
+Get 2
+Puts

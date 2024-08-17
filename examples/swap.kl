@@ -1,0 +1,13 @@
+Push 1
+Push 2
+Push 3
+
+Swap
+Puts
+Pop
+
+Swap
+Puts
+Pop
+
+Puts

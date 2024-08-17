@@ -10,7 +10,7 @@ int main(int argc, const char **argv) {
     BuildAndRunCommand("cat out.s");
   }
   if (HasFlag(argc, argv, "debug")) {
-    BuildAndRunCommand("./src/klaus test.kl");
+    BuildAndRunCommand("./src/klaus examples/test.kl");
   }
 
   return 0;
