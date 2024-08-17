@@ -1,4 +1,5 @@
 type cmpType = Equal | Less | More | Leq | Beq
+type mode = Imm of int | Stack
 
 type token =
   | Push of int
@@ -13,7 +14,7 @@ type token =
   | Swap
   | Cmp of (cmpType * string)
   | Jmp of string
-  | Get
+  | Get of mode
   | End
   | Label of string
 
@@ -42,9 +43,17 @@ let tokenizer (program : string) : string list =
   |> List.flatten
 
 let extract_label x =
-  if String.starts_with ~prefix:":" x && String.length x > 1 && String.fold_left (fun acc c -> if c == ':' then acc + 1 else acc) 0 x == 1
+  if
+    String.starts_with ~prefix:":" x
+    && String.length x > 1
+    && String.fold_left (fun acc c -> if c == ':' then acc + 1 else acc) 0 x == 1
   then Some (String.sub x 1 (String.length x - 1))
   else None
+
+let get_mode ts line : string list * mode =
+  match ts with
+  | t :: ts -> ( match int_of_string_opt t with Some n -> (ts, Imm n) | None -> (t :: ts, Stack))
+  | _ -> failwith ("expected token in line:" ^ string_of_int line)
 
 let rec parser ins line = function
   | [] -> ins
@@ -66,7 +75,9 @@ let rec parser ins line = function
       | "Cmp" -> (
           match ts with
           | t :: t2 :: ts -> (
-              let label = match extract_label t2 with Some l -> l | None -> failwith "Not a label in line:" ^ string_of_int line in
+              let label =
+                match extract_label t2 with Some l -> l | None -> failwith "Not a label in line:" ^ string_of_int line
+              in
               match t with
               | "=" -> parser (Cmp (Equal, label) :: ins) (line + 1) ts
               | "<=" -> parser (Cmp (Leq, label) :: ins) (line + 1) ts
@@ -78,10 +89,14 @@ let rec parser ins line = function
       | "Jmp" -> (
           match ts with
           | t :: ts ->
-              let label = match extract_label t with Some l -> l | None -> failwith "Not a label in line:" ^ string_of_int line in
+              let label =
+                match extract_label t with Some l -> l | None -> failwith "Not a label in line:" ^ string_of_int line
+              in
               parser (Jmp label :: ins) (line + 1) ts
           | _ -> failwith "not a label")
-      | "Get" -> parser (Get :: ins) (line + 1) ts
+      | "Get" ->
+          let ts, mode = get_mode ts line in
+          parser (Get mode :: ins) (line + 1) ts
       | "End" -> parser (End :: ins) (line + 1) ts
       | "\n" -> parser [] (line + 1) ts
       | x -> (
@@ -90,13 +105,22 @@ let rec parser ins line = function
           | None -> failwith ("Not a valid token in line:" ^ string_of_int line ^ " : " ^ x)))
 
 let get_cmp_ins cmp label =
-  (match cmp with Equal -> "je " ^ label | Leq -> "jle " ^ label | Beq -> "jge " ^ label | Less -> "jl " ^ label | More -> "jg " ^ label)
+  (match cmp with
+  | Equal -> "je " ^ label
+  | Leq -> "jle " ^ label
+  | Beq -> "jge " ^ label
+  | Less -> "jl " ^ label
+  | More -> "jg " ^ label)
   ^ "\n"
 
 let gen_push asm n = asm ^ "\nmov rax, " ^ string_of_int n ^ "\npush rax\n"
 let gen_pop asm = asm ^ "\npop rax\nxor rax, rax\n"
 let gen_puts asm = asm ^ "\nmov rsi, [rsp]\n" ^ align ^ "\nmov rdi, pformat\nxor rax, rax\ncall printf\n\n" ^ restore
-let gen_read asm = asm ^ align ^ "\nmov rdi, sformat\nmov rsi, num\nxor rax, rax\ncall scanf\nmov rax, [num]\n" ^ restore ^ "push rax\n\n"
+
+let gen_read asm =
+  asm ^ align ^ "\nmov rdi, sformat\nmov rsi, num\nxor rax, rax\ncall scanf\nmov rax, [num]\n" ^ restore
+  ^ "push rax\n\n"
+
 let gen_add asm = asm ^ "\nmov rax, [rsp]\nmov rbx, [rsp + 8]\nadd rax, rbx\npush rax\n\n"
 let gen_sub asm = asm ^ "\nmov rbx, [rsp]\nmov rax, [rsp + 8]\nsub rax, rbx\npush rax\n\n"
 let gen_mul asm = asm ^ "\nmov rax, [rsp]\nmov rbx, [rsp + 8]\nmul rbx\npush rax\n\n"
@@ -107,6 +131,7 @@ let gen_end asm = asm ^ "\n" ^ tail ^ "\n"
 let gen_label asm label = asm ^ "\n" ^ label ^ ":\n"
 let gen_cmp asm cmp label = asm ^ "\nmov rax, [rsp]\nmov rbx, [rsp + 8]\ncmp rax, rbx\n" ^ get_cmp_ins cmp label
 let gen_jmp asm label = asm ^ "\njmp " ^ label ^ "\n"
+let gen_get_imm asm index = asm ^ "\nmov rax, [rsp + " ^ string_of_int (index * 8) ^ "]\npush rax\n\n"
 let gen_get asm = asm ^ "\nmov rax, [rsp]\nmov rax, [rsp + 8 * rax]\npush rax\n\n"
 
 let rec codegen asm = function
@@ -151,8 +176,8 @@ let rec codegen asm = function
       | Jmp label ->
           let asm' = gen_jmp asm label in
           codegen asm' ts
-      | Get ->
-          let asm' = gen_get asm in
+      | Get mode ->
+          let asm' = match mode with Stack -> gen_get asm | Imm i -> gen_get_imm asm i in
           codegen asm' ts
       | Label label ->
           let asm' = gen_label asm label in

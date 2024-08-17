@@ -1,0 +1,41 @@
+# Fibonacci Sequence
+Read
+Push 0
+Push 1
+
+# Loop compare
+:loop
+Push 3
+Get
+Swap
+Pop
+Push 2
+Cmp > :end
+
+# Loop body
+Pop
+Push 1
+Sub
+Swap
+Pop
+
+Push 3
+Get
+Swap
+Pop
+Push 4
+Get
+Swap
+Pop
+Add
+Puts
+
+Jmp :loop
+
+
+:end
+Pop
+Puts
+End
+
+# n 0 1 n 1 (n-1)

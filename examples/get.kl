@@ -2,6 +2,9 @@ Push 1
 Push 2
 Push 3
 
+Get 3
+Puts
+
 Push 3
 Get
 Puts
