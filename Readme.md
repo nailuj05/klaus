@@ -31,8 +31,55 @@ Puts
 All data handled by klaus is signed 64-bit integers.
 
 ```klaus
-# Fibonacci numbers
+# Fibonacci Sequence
+Read
+Push 1
+Push 1
+
+# Loop compare
+:loop
+Get 2
+Push 2
+Cmp > :end
+
+# Loop body
+Pop
+Push 1
+Sub
+
+Get 1
+Get 3
+Get 3
+Add
+
+Jmp :loop
+
+# Loop End
+:end
+Pop
+Pop
+Puts
+End
 ```
+
+Many more examples can be found in the `examples/` folder
+
+## Operators
+
+- `Push <imm>`: Pushes an immediate value onto the stack
+- `Pop`: Pops the top value of the stack
+- `Puts`: Prints the top value of the stack (without popping it)
+- `Read`: Reads a user input (as int) and pushes it on top of the stack
+- `Swap`: Swaps the top 2 values
+- `Dup`: Duplicates the top value
+- `Get (<imm>)`: Gets a value from the stack (indexed by either and immediate value or the value on top of the stack)
+- `Add`: Replaces the top 2 values by their sum
+- `Sub`: Replaces the top 2 values by their difference
+- `Mul`: Replaces the top 2 values by their product
+- `Div`: Replaces the top 2 values by their quotient
+- `:<label>`: Marks a label to jump to
+- `Jmp :<label>`: Jumps the a label
+- `Cmp <comparison> :<label>`: Compares the top 2 values on the stack by a given comparison (<,>,<=,>=,=), if true jump to the label
 
 *Further information about the language will follow*
 
