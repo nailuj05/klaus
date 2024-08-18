@@ -20,17 +20,83 @@ type token =
 
 (*ASM Header*)
 let head =
-  "section .data\n\
-   pformat db \"%ld\", 10, 0  ; Format string for printf\n\n\
-   sformat db \"%d\", 0 ; Format string for scanf\n\
+  "\n\
+   section .data\n\
+  \    nl db 10\n\n\
    section .bss\n\
-   result resq 1\n\n\
-   num resq 1\n\n\
+  \    input resb 32\n\
+  \    number resq 1\n\n\
    section .text\n\
-   global _start\n\n\
-   extern printf\n\n\
-   extern scanf\n\n\
-   _start:\n\n"
+  \    global _start\n\n\
+   get:\n\
+  \    ; Read input\n\
+  \    mov rax, 0\n\
+  \    mov rdi, 0\n\
+  \    mov rsi, input\n\
+  \    mov rdx, 32\n\
+  \    syscall\n\n\
+  \    ; Convert string to integer\n\
+  \    mov rdi, input\n\
+  \    call atoi\n\
+  \    mov [number], rax\n\
+  \    ret\n\n\
+   puts:\n\
+  \    ; Print the number\n\
+  \    mov rdi, rax\n\
+  \    call print_int\n\
+  \  \n\
+  \    call newline\n\
+  \    ret\n\n\
+   newline:\n\
+  \    mov rax, 1\n\
+  \    mov rdi, 1\n\
+  \    mov rsi, nl\n\
+  \    mov rdx, 1\n\
+  \    syscall\n\
+  \    ret\n\n\
+   ; Function to convert ASCII string to integer\n\
+   atoi:\n\
+  \    xor rax, rax\n\
+  \    xor rcx, rcx\n\
+   .loop:\n\
+  \    movzx rdx, byte [rdi + rcx]\n\
+  \    cmp dl, '0'\n\
+  \    jb .done\n\
+  \    cmp dl, '9'\n\
+  \    ja .done\n\
+  \    sub dl, '0'\n\
+  \    imul rax, 10\n\
+  \    add rax, rdx\n\
+  \    inc rcx\n\
+  \    jmp .loop\n\
+   .done:\n\
+  \    ret\n\n\
+   ; Function to print an integer\n\
+   print_int:\n\
+  \    push rbp\n\
+  \    mov rbp, rsp\n\
+  \    sub rsp, 32\n\
+  \    mov qword [rbp-8], 0  ; NULL terminator\n\
+  \    mov rax, rdi\n\
+  \    mov rcx, 10\n\
+  \    mov rsi, rbp\n\
+   .loop:\n\
+  \    xor rdx, rdx\n\
+  \    div rcx\n\
+  \    add dl, '0'\n\
+  \    dec rsi\n\
+  \    mov [rsi], dl\n\
+  \    test rax, rax\n\
+  \    jnz .loop\n\
+  \    mov rax, 1\n\
+  \    mov rdi, 1\n\
+  \    mov rdx, rbp\n\
+  \    sub rdx, rsi\n\
+  \    syscall\n\
+  \    mov rsp, rbp\n\
+  \    pop rbp\n\
+  \    ret\n\n\
+   _start:\n"
 
 let tail = "mov rax, 60\nxor rdi, rdi\nsyscall"
 let align = "\nmov rbp, rsp\nand rsp, -16 \n"
@@ -115,12 +181,8 @@ let get_cmp_ins cmp label =
 
 let gen_push asm n = asm ^ "\nmov rax, " ^ string_of_int n ^ "\npush rax\n"
 let gen_pop asm = asm ^ "\npop rax\nxor rax, rax\n"
-let gen_puts asm = asm ^ "\nmov rsi, [rsp]\n" ^ align ^ "\nmov rdi, pformat\nxor rax, rax\ncall printf\n\n" ^ restore
-
-let gen_read asm =
-  asm ^ align ^ "\nmov rdi, sformat\nmov rsi, num\nxor rax, rax\ncall scanf\nmov rax, [num]\n" ^ restore
-  ^ "push rax\n\n"
-
+let gen_puts asm = asm ^ "\nmov rax, [rsp]\n" ^ align ^ "\ncall puts\n\n" ^ restore
+let gen_read asm = asm ^ align ^ "\ncall get\n" ^ restore ^ "push rax\n\n"
 let gen_add asm = asm ^ "\npop rax\npop rbx\nadd rax, rbx\npush rax\n\n"
 let gen_sub asm = asm ^ "\npop rbx\npop rax\nsub rax, rbx\npush rax\n\n"
 let gen_mul asm = asm ^ "\npop rax\npop rbx\nmul rbx\npush rax\n\n"
@@ -190,10 +252,7 @@ let assemble file asm =
   Printf.fprintf oc "%s\n" (asm ^ tail);
   close_out oc;
   match Sys.command "nasm -f elf64 -o out.o out.s" with
-  | 0 -> (
-      match Sys.command "ld -o out out.o -lc -e _start -dynamic-linker /lib64/ld-linux-x86-64.so.2" with
-      | 0 -> ()
-      | _ -> failwith "linking failed")
+  | 0 -> ( match Sys.command "ld -o out out.o -e _start" with 0 -> () | _ -> failwith "linking failed")
   | _ -> failwith "assembly failed"
 
 let read_file filename =
