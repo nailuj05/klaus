@@ -17,6 +17,8 @@ You will have to build the noob.c file using your systems C compiler, then run t
 
 Being a stack based language means there are no variables, all data is kept on a stack.
 Klaus provides you with a basic set of input/output, algebraic and branching/looping instructions.
+Currently the syntax is still in a very simple, pseudo assembly state, 
+I am planning on expanding the synatx and allowing for more complex, abstract syntax.
 
 ```klaus
 # Example program that compares a user input to 10 and prints the result
