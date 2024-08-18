@@ -1,6 +1,8 @@
 # Klaus
 
 Klaus is a simple stack based language with a compiler implemented in OCaml. 
+The language itself does not rely on any dependencies, it is currently developed on and for x86-64 GNU/Linux, 
+but exploring other architectures and operating systems is something I would like to do.
 Its name is a reference to [Staplerfahrer Klaus](https://www.youtube.com/watch?v=dJdCJMyBi5I) (Stapel being Stack in german).
 
 ## Building the compiler
@@ -12,7 +14,7 @@ You will have to build the noob.c file using your systems C compiler, then run t
 
 ## The Klaus language
 
-Being a stack based language means there are no variables, all data is kept on a stack. 
+Being a stack based language means there are no variables, all data is kept on a stack.
 Klaus provides you with a basic set of input/output, algebraic and branching/looping instructions.
 
 ```klaus
@@ -80,6 +82,12 @@ Many more examples can be found in the `examples/` folder
 - `:<label>`: Marks a label to jump to
 - `Jmp :<label>`: Jumps the a label
 - `Cmp <comparison> :<label>`: Compares the top 2 values on the stack by a given comparison (<,>,<=,>=,=), if true jump to the label
+
+## Future
+- [x] Replace libc
+- [ ] Explore Reverse Polish Notation
+- [ ] Expand documentation and example programs
+- [ ] Char, String and float datatypes
 
 *Further information about the language will follow*
 
