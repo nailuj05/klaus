@@ -121,6 +121,63 @@ let get_mode ts line : string list * mode =
   | t :: ts -> ( match int_of_string_opt t with Some n -> (ts, Imm n) | None -> (t :: ts, Stack))
   | _ -> failwith ("expected token in line:" ^ string_of_int line)
 
+
+type tvar =
+  | Def of string
+  | Use of string
+  | Non
+
+let rec allowed_name (first: bool) = function
+  | [] -> true
+  | c :: s -> if 'a' <= c && c <= 'z' || 'A' <= c && c <= 'Z' ||
+                   c == '_' || (not first && '0' <= c && c <= '9') then
+                allowed_name false s
+              else
+                false
+
+let charl_to_string chars = (String.of_seq (List.to_seq chars))
+let string_to_charl string = (List.of_seq (String.to_seq string))
+
+let is_var s = match s with
+  | c::n ->
+     if c == ':' && allowed_name true n then
+       Def((charl_to_string n))
+     else if allowed_name true s then
+       Use(charl_to_string s)
+     else
+       Non
+  | [] -> failwith "whot"
+
+let vlookup: (string, int) Hashtbl.t = Hashtbl.create 10
+
+let parsevar s str vl: int option = match is_var str with
+  | Non -> None
+  | Def n -> Hashtbl.add vl n s; None
+  | Use n -> match Hashtbl.find_opt vl n with
+                 | Some x -> Some x
+                 | None -> failwith ("variable not defined")
+
+
+let rec parser2 ins vl s = function
+  | [] -> ins
+  | t :: ts -> (
+    match t with
+    | "+" -> parser2 (Add :: ins) vl (s + 1) ts
+    | "-" -> parser2 (Sub :: ins) vl (s + 1) ts
+    | "*" -> parser2 (Mul :: ins) vl (s + 1) ts
+    | "/" -> parser2 (Div :: ins) vl (s + 1) ts
+    | "." -> parser2 (Pop :: ins) vl (s - 1) ts
+    | "dup" -> parser2 (Dup :: ins) vl (s + 1) ts
+    | "puts" -> parser2 (Puts :: ins) vl s ts
+    | "read" -> parser2 (Read :: ins) vl (s + 1) ts
+    | "swap" -> parser2 (Swap :: ins) vl s ts
+    | str -> match int_of_string_opt str with
+             | Some i -> parser2 (Push i :: ins) vl (s + 1) ts
+             | None -> match parsevar s (string_to_charl str) vl with
+                       | None -> parser2 ins vl s ts
+                       | Some x -> parser2 (Get (Imm x) :: ins) vl (s + 1) ts
+  )
+
 let rec parser ins line = function
   | [] -> ins
   | t :: ts -> (
@@ -271,4 +328,4 @@ let handle_args : string =
 
 let () =
   let program = handle_args in
-  tokenizer program |> parser [] 0 |> List.rev |> codegen head |> assemble "out.s"
+  tokenizer program |> parser2 [] vlookup 0 |> List.rev |> codegen head |> assemble "out.s"

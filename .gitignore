@@ -1,8 +1,9 @@
 *.cmi
 *.cmo
+*.cmx
 klaus
 noob
 *.o
 out
 out.*
-
+*.*~

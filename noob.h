@@ -1,14 +1,68 @@
 #ifndef NOOB_H
 #define NOOB_H
 
+#include <pthread.h>
 #include <stdio.h>
+#include <stdarg.h>
 #include <stdlib.h>
 #include <string.h>
+#include <libgen.h>
+#include <unistd.h>
 #include <sys/stat.h>
 
-// Check Flags
+// --------- //
+//   utils   //
+// --------- //
 
-int HasFlag(int argc, const char **argv, const char *flag) {
+typedef struct noob_string_s {
+  char *buf;
+  size_t length;
+} noob_string;
+
+noob_string *noob_string_create(size_t length) {
+  noob_string *bc = (noob_string *)malloc(sizeof(noob_string));
+  if (bc == NULL) {
+    printf("[err] buy more ram\n");
+    exit(1);
+  }
+
+  bc->buf = (char *)malloc(sizeof(char) * length);
+
+  if (bc->buf == NULL) {
+    printf("[err] buy more ram\n");
+    exit(1);
+  }
+
+  bc->length = length;
+
+  return bc;
+}
+
+void noob_string_append(noob_string *str, const char *astr) {
+  size_t alen = astr ? strlen(astr) : 0;
+  size_t blen = str->buf ? strlen(str->buf) : 0;
+
+  if (alen + blen > str->length) {
+		size_t new_size = (alen + blen) * 2;
+    char *t = realloc(str->buf, new_size);
+    if (!t) {
+        printf("[err] buy more ram\n");
+        exit(1);
+    }
+    str->buf = t;
+    str->length = new_size;
+  }
+	
+  strcat(str->buf, astr);
+}
+
+noob_string *noob_string_create_from(const char* init) {
+	noob_string* s = noob_string_create(strlen(init));
+	noob_string_append(s, init);
+	return s;
+}
+
+int noob_has_flag(int argc, const char **argv, const char *flag) {
   for (int i = 0; i < argc; i++) {
     if (strcmp(argv[i], flag) == 0)
       return 1;
@@ -16,128 +70,206 @@ int HasFlag(int argc, const char **argv, const char *flag) {
   return 0;
 }
 
-// Build System
+// Calculate the number of varargs so we dont overflow and dont need a NULL as the last arg
+#define COUNT_ARGS(...)  (sizeof((const char*[]){__VA_ARGS__}) / sizeof(const char*))
+#define noob_help(ac, av, ...) \
+    _noob_help(ac, av, COUNT_ARGS(__VA_ARGS__), __VA_ARGS__)
 
-typedef struct BuildCommand {
-  char *command;
-  size_t length;
-} BuildCommand;
+int _noob_help(int ac, const char* av[], int c, const char* first, ...) {
+	if (noob_has_flag(ac,av,"-h") ||
+			noob_has_flag(ac,av,"--help") ||
+			noob_has_flag(ac,av,"help")) {
+		
+		printf("[help] usage and information for this noob build system.\n");
 
-BuildCommand *CreateBuildCommand(size_t commandLength) {
-  BuildCommand *bc = (BuildCommand *)malloc(sizeof(BuildCommand));
-  if (bc == NULL) {
-    printf("buy more ram\n");
-    exit(1);
-  }
+		va_list args;
+		va_start(args, first);
+		for(int i = 0; i < c; ++i) {
+			printf("\t%s\n", first);
+			first = va_arg(args, const char*);
+		}
+		va_end(args);
 
-  bc->command = (char *)malloc(sizeof(char) * commandLength);
-
-  if (bc == NULL) {
-    printf("buy more ram\n");
-    exit(1);
-  }
-
-  bc->length = commandLength;
-
-  return bc;
+		return 1;
+	}
+	return 0;
 }
 
-void AddCommand(BuildCommand *bc, const char *cmd) {
-  size_t alen = strlen(cmd);
-  size_t blen = strlen(bc->command);
-
-  if (alen + blen + 1 > bc->length) {
-    printf("Command to long.\n");
-    exit(1);
+void noob_ensure_dir(const char *path) {
+	noob_string *s = noob_string_create_from("mkdir -p ");
+	noob_string_append(s, path);
+  if (system(s->buf) != 0) {
+		printf("[err] mkdir failed");
+		exit(1);
   }
-  strcat(bc->command, cmd);
-  strcat(bc->command, " ");
 }
 
-int RunCommand(BuildCommand *bc) {
-  int result = system(bc->command);
+// ------------ //
+// build system //
+// ------------ //
+
+int noob_run_cmd(noob_string *bc) {
+  printf("[cmd] %s\n", bc->buf);
+  int result = system(bc->buf);
 
   if (result == 0) {
-    printf("Command executed.\n");
+    printf("[info] cmd executed.\n");
     return 0;
   } else {
-    printf("Command failed.\n");
+    printf("[err] cmd failed.\n");
     return 1;
   }
 }
 
-void FreeCommand(BuildCommand *bc) {
+void *_noob_run_cmd(void *p) {
+  noob_string *bc = (noob_string *)p;
+
+  printf("[cmd] %s\n", bc->buf);
+  int result = system(bc->buf);
+
+  if (result == 0) {
+    //printf("[info] async cmd executed.\n");
+  } else {
+    printf("[err] cmd failed.\n");
+  }
+  return NULL;
+}
+
+void *noob_run_cmd_async(noob_string *bc) {
+  pthread_t *t = (pthread_t *)malloc(sizeof(pthread_t));
+
+  if (t == NULL) {
+    printf("[err] buy more ram\n");
+    exit(1);
+  }
+
+  int res = pthread_create(t, NULL, _noob_run_cmd, bc);
+
+  if (res != 0) {
+    printf("[err] thread error encountered with code %d\n", res);
+    exit(1);
+  }
+
+  return t;
+}
+
+void noob_join_async(void *t) {
+  pthread_join(*(pthread_t *)t, NULL);
+  free(t);
+  printf("[info] async cmd joined\n");
+}
+
+void noob_string_free(noob_string *bc) {
   if (bc != NULL) {
-    free(bc->command);
+    free(bc->buf);
     free(bc);
   }
 }
 
-int BuildAndRunCommand(const char *cmd) {
+int noob_run(const char *cmd) {
+  printf("[cmd] %s\n", cmd);
   int result = system(cmd);
 
   if (result == 0) {
     return 0;
   } else {
-    printf("Command failed.\n");
+    printf("[err] cmd failed.\n");
     return 1;
   }
 }
 
-// RebuildYourself
+// ---------------- //
+// rebuild yourself //
+// ---------------- //
 
-int nb_GetLastModified(const char *filepath) {
+char *_noob_realpath(const char *path) {
+	char *rpath = malloc(1024);
+  
+	if (realpath(path, rpath) == NULL) {
+		printf("[err] realpath failed\n");
+		exit(1);
+	}
+
+	return rpath;
+}
+
+char *_noob_set_wdir(const char *argv0) {
+	char *path = _noob_realpath(argv0);
+	char *rpath = malloc(1024);
+	strcpy(rpath, path);
+	char *dir = dirname(path);
+
+	if (chdir(dir) != 0) {
+		perror("[err] chdir failed\n");
+		exit(1);
+	}
+
+	free(path);
+	return rpath;
+}
+
+int noob_get_last_modified(const char *filepath) {
   struct stat file_stat;
 
   if (stat(filepath, &file_stat) != 0) {
-    perror("Error getting file stats");
+    printf("[err] error getting file stats. file might not exist\n");
     return -1;
   }
 
   return file_stat.st_mtime;
 }
 
-int nb_Recompile() {
-  char command[256];
+int noob_is_outdated(const char *file_a, const char *file_b) {
+  if (noob_get_last_modified(file_a) > noob_get_last_modified(file_b))
+    return 1;
+  return 0;
+}
 
-  if ((system("gcc -fsyntax-only noob.c noob.h")) != 0) {
-    printf("Recompilation failed due to errors.\n");
+int _noob_recomp() {
+  char cmd[256];
+
+  if ((system("cc -fsyntax-only noob.c noob.h")) != 0) {
+    printf("[info] recompilation failed due to errors.\n");
     return 1;
   }
 
   if ((system("rm -rf noob")) != 0) {
-    printf("Removing failed.\n");
+    printf("[info] removing failed.\n");
     return 0;
   }
 
-  snprintf(command, sizeof(command), "gcc noob.c noob.h -o noob");
+  snprintf(cmd, sizeof(cmd), "cc noob.c noob.h -o noob -lpthread");
 
-  int result = system(command);
+  int result = system(cmd);
 
   if (result == 0) {
-    printf("Compilation successful.\n");
+    printf("[info] compilation successful.\n");
     return 0;
   } else {
-    printf("Compilation failed.\n");
+    printf("[err] compilation failed.\n");
     return 1;
   }
 }
 
-void RebuildYourself(int argc, const char **argv) {
-  int source = nb_GetLastModified("noob.c");
-  int exec = nb_GetLastModified("noob");
+void noob_rebuild_yourself(int argc, const char **argv) {
+	char *rpath = _noob_set_wdir(argv[0]);
+	
+  if (noob_is_outdated("noob.c", "noob") ||
+      noob_is_outdated("noob.h", "noob")) {
+    printf("[info] rebuilding...\n");
+    if (_noob_recomp() == 0) {
+      noob_string *bc = noob_string_create(128);
 
-  if (source > exec) {
-    printf("Rebuilding\n");
-    if (nb_Recompile() == 0) {
-      BuildCommand *bc = CreateBuildCommand(128);
+			noob_string_append(bc, rpath);
+			free(rpath);
+      for (int i = 1; i < argc; i++) {
+        noob_string_append(bc, argv[i]);
+				noob_string_append(bc, " ");
+			}
 
-      for (int i = 0; i < argc; i++)
-        AddCommand(bc, argv[i]);
+      noob_run_cmd(bc);
 
-      RunCommand(bc);
-
-      FreeCommand(bc);
+      noob_string_free(bc);
       exit(0);
     }
     exit(1);
