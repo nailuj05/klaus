@@ -33,6 +33,7 @@ Many more examples can be found in the `examples/` folder (most of the examples 
 - `read`: Reads a user input (as int) and pushes it on top of the stack
 - `swap`: Swaps the top 2 values
 - `dup`: Duplicates the top value
+- `end` : Ends the program
 - `+`: Replaces the top 2 values by their sum
 - `-`: Replaces the top 2 values by their difference
 - `*`: Replaces the top 2 values by their product
