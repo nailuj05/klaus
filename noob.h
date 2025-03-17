@@ -65,7 +65,7 @@ noob_string *noob_string_create_from(const char* init) {
 int noob_has_flag(int argc, const char **argv, const char *flag) {
   for (int i = 0; i < argc; i++) {
     if (strcmp(argv[i], flag) == 0)
-      return 1;
+      return i;
   }
   return 0;
 }
@@ -263,8 +263,8 @@ void noob_rebuild_yourself(int argc, const char **argv) {
 			noob_string_append(bc, rpath);
 			free(rpath);
       for (int i = 1; i < argc; i++) {
-        noob_string_append(bc, argv[i]);
 				noob_string_append(bc, " ");
+        noob_string_append(bc, argv[i]);
 			}
 
       noob_run_cmd(bc);

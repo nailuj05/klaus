@@ -14,6 +14,8 @@ type token =
   | Swap
   | Cmp of (cmpType * string)
   | Jmp of string
+  | Load of string
+  | Store of string
   | Get of mode
   | End
   | Label of string
@@ -95,8 +97,7 @@ let head =
   \    syscall\n\
   \    mov rsp, rbp\n\
   \    pop rbp\n\
-  \    ret\n\n\
-   _start:\n"
+  \    ret\n\n"
 
 let tail = "mov rax, 60\nxor rdi, rdi\nsyscall"
 let align = "\nmov rbp, rsp\nand rsp, -16 \n"
@@ -146,86 +147,33 @@ let is_var s = match s with
        Use(charl_to_string s)
      else
        Non
-  | [] -> failwith "whot"
+  | [] -> failwith "fuck"
 
-let vlookup: (string, int) Hashtbl.t = Hashtbl.create 10
-
-let parsevar s str vl: int option = match is_var str with
-  | Non -> None
-  | Def n -> Hashtbl.add vl n s; None
-  | Use n -> match Hashtbl.find_opt vl n with
-                 | Some x -> Some x
-                 | None -> failwith ("variable not defined")
-
-
-let rec parser2 ins vl s = function
-  | [] -> ins
+let rec parser2 ins (vl: string list) lex =
+  match lex with
+  | [] -> ins, vl
   | t :: ts -> (
     match t with
-    | "+" -> parser2 (Add :: ins) vl (s + 1) ts
-    | "-" -> parser2 (Sub :: ins) vl (s + 1) ts
-    | "*" -> parser2 (Mul :: ins) vl (s + 1) ts
-    | "/" -> parser2 (Div :: ins) vl (s + 1) ts
-    | "." -> parser2 (Pop :: ins) vl (s - 1) ts
-    | "dup" -> parser2 (Dup :: ins) vl (s + 1) ts
-    | "puts" -> parser2 (Puts :: ins) vl s ts
-    | "read" -> parser2 (Read :: ins) vl (s + 1) ts
-    | "swap" -> parser2 (Swap :: ins) vl s ts
+    | "+" -> parser2 (Add :: ins) vl ts
+    | "-" -> parser2 (Sub :: ins) vl ts
+    | "*" -> parser2 (Mul :: ins) vl ts
+    | "/" -> parser2 (Div :: ins) vl ts
+    | "." -> parser2 (Pop :: ins) vl ts
+    | "end" -> parser2 (End :: ins) vl ts
+    | "dup" -> parser2 (Dup :: ins) vl ts
+    | "puts" -> parser2 (Puts :: ins) vl ts
+    | "read" -> parser2 (Read :: ins) vl ts
+    | "swap" -> parser2 (Swap :: ins) vl ts
     | str -> match int_of_string_opt str with
-             | Some i -> parser2 (Push i :: ins) vl (s + 1) ts
-             | None -> match parsevar s (string_to_charl str) vl with
-                       | None -> parser2 ins vl s ts
-                       | Some x -> parser2 (Get (Imm x) :: ins) vl (s + 1) ts
+               (*case 1: push new var onto the stack*)
+             | Some i -> parser2 (Push i :: ins) vl ts
+               (*case 2: new var assignment or var usage*)
+             | None -> match is_var (string_to_charl str) with
+                       | Def n -> parser2 (Store n :: ins) (n::vl) ts
+                       | Use n -> parser2 (Load n :: ins) vl ts
+                       | Non -> failwith "illegal instruction"
+  (*todo next: if/loop/break implementation and logic*)
   )
-
-let rec parser ins line = function
-  | [] -> ins
-  | t :: ts -> (
-      match t with
-      | "Push" -> (
-          match ts with
-          | t :: ts -> parser (Push (int_of_string t) :: ins) (line + 1) ts
-          | _ -> failwith ("value expected in line:" ^ string_of_int line))
-      | "Pop" -> parser (Pop :: ins) (line + 1) ts
-      | "Puts" -> parser (Puts :: ins) (line + 1) ts
-      | "Read" -> parser (Read :: ins) (line + 1) ts
-      | "Add" -> parser (Add :: ins) (line + 1) ts
-      | "Sub" -> parser (Sub :: ins) (line + 1) ts
-      | "Mul" -> parser (Mul :: ins) (line + 1) ts
-      | "Div" -> parser (Div :: ins) (line + 1) ts
-      | "Dup" -> parser (Dup :: ins) (line + 1) ts
-      | "Swap" -> parser (Swap :: ins) (line + 1) ts
-      | "Cmp" -> (
-          match ts with
-          | t :: t2 :: ts -> (
-              let label =
-                match extract_label t2 with Some l -> l | None -> failwith "Not a label in line:" ^ string_of_int line
-              in
-              match t with
-              | "=" -> parser (Cmp (Equal, label) :: ins) (line + 1) ts
-              | "<=" -> parser (Cmp (Leq, label) :: ins) (line + 1) ts
-              | ">=" -> parser (Cmp (Beq, label) :: ins) (line + 1) ts
-              | "<" -> parser (Cmp (Less, label) :: ins) (line + 1) ts
-              | ">" -> parser (Cmp (More, label) :: ins) (line + 1) ts
-              | _ -> failwith ("not a compare type in line:" ^ string_of_int line))
-          | _ -> failwith ("compare type expected in line:" ^ string_of_int line))
-      | "Jmp" -> (
-          match ts with
-          | t :: ts ->
-              let label =
-                match extract_label t with Some l -> l | None -> failwith "Not a label in line:" ^ string_of_int line
-              in
-              parser (Jmp label :: ins) (line + 1) ts
-          | _ -> failwith "not a label")
-      | "Get" ->
-          let ts, mode = get_mode ts line in
-          parser (Get mode :: ins) (line + 1) ts
-      | "End" -> parser (End :: ins) (line + 1) ts
-      | "\n" -> parser [] (line + 1) ts
-      | x -> (
-          match extract_label t with
-          | Some label -> parser (Label label :: ins) (line + 1) ts
-          | None -> failwith ("Not a valid token in line:" ^ string_of_int line ^ " : " ^ x)))
 
 let get_cmp_ins cmp label =
   (match cmp with
@@ -239,20 +187,27 @@ let get_cmp_ins cmp label =
 let gen_push asm n = asm ^ "\nmov rax, " ^ string_of_int n ^ "\npush rax\n"
 let gen_pop asm = asm ^ "\npop rax\nxor rax, rax\n"
 let gen_puts asm = asm ^ "\nmov rax, [rsp]\n" ^ align ^ "\ncall puts\n\n" ^ restore
-let gen_read asm = asm ^ align ^ "\ncall get\n" ^ restore ^ "push rax\n\n"
-let gen_add asm = asm ^ "\npop rax\npop rbx\nadd rax, rbx\npush rax\n\n"
-let gen_sub asm = asm ^ "\npop rbx\npop rax\nsub rax, rbx\npush rax\n\n"
-let gen_mul asm = asm ^ "\npop rax\npop rbx\nmul rbx\npush rax\n\n"
-let gen_div asm = asm ^ "\npop rax\npop rbx\ndiv rbx\npush rax\n\n"
-let gen_dup asm = asm ^ "\nmov rax, [rsp]\npush rax\n\n"
-let gen_swap asm = asm ^ "\npop rax\npop rbx\npush rax\npush rbx\n\n"
+let gen_read asm = asm ^ align ^ "\ncall get\n" ^ restore ^ "push rax\n"
+let gen_add asm = asm ^ "\npop rax\npop rbx\nadd rax, rbx\npush rax\n"
+let gen_sub asm = asm ^ "\npop rbx\npop rax\nsub rax, rbx\npush rax\n"
+let gen_mul asm = asm ^ "\npop rax\npop rbx\nmul rbx\npush rax\n"
+let gen_div asm = asm ^ "\npop rax\npop rbx\ndiv rbx\npush rax\n"
+let gen_dup asm = asm ^ "\nmov rax, [rsp]\npush rax\n"
+let gen_swap asm = asm ^ "\npop rax\npop rbx\npush rax\npush rbx\n"
 let gen_end asm = asm ^ "\n" ^ tail ^ "\n"
 let gen_label asm label = asm ^ "\n" ^ label ^ ":\n"
 let gen_cmp asm cmp label = asm ^ "\nmov rax, [rsp]\nmov rbx, [rsp + 8]\ncmp rax, rbx\n" ^ get_cmp_ins cmp label
 let gen_jmp asm label = asm ^ "\njmp " ^ label ^ "\n"
-let gen_get_imm asm index = asm ^ "\nmov rax, [rsp + " ^ string_of_int (index * 8) ^ "]\npush rax\n\n"
-let gen_get asm = asm ^ "\nmov rax, [rsp]\nmov rax, [rsp + 8 * rax]\npush rax\n\n"
+let gen_get_imm asm index = asm ^ "\nmov rax, [rsp + " ^ string_of_int (index * 8) ^ "]\npush rax\n"
+let gen_get asm = asm ^ "\nmov rax, [rsp]\nmov rax, [rsp + 8 * rax]\npush rax\n"
+let gen_load asm name = asm ^ "\nmov rax, qword [" ^ name ^ "]\npush rax\n"
+let gen_store asm name = asm ^ "\nmov rax, [rsp]\nmov qword [" ^ name ^ "], rax\n"
 
+let vargen vl asm =
+  let f = (fun acc k -> acc ^ k ^ " dq 0\n") in
+  let sdata = List.fold_left f "" vl in
+  "section .data\n" ^ sdata ^ "\n" ^ head ^"\n_start:\n"
+  
 let rec codegen asm = function
   | t :: ts -> (
       match t with
@@ -295,6 +250,12 @@ let rec codegen asm = function
       | Jmp label ->
           let asm' = gen_jmp asm label in
           codegen asm' ts
+      | Load name ->
+         let asm' = gen_load asm name in
+         codegen asm' ts
+      | Store name ->
+         let asm' = gen_store asm name in
+         codegen asm' ts
       | Get mode ->
           let asm' = match mode with Stack -> gen_get asm | Imm i -> gen_get_imm asm i in
           codegen asm' ts
@@ -327,5 +288,9 @@ let handle_args : string =
     try read_file filename with Sys_error msg -> failwith ("Error: " ^ msg ^ "\n")
 
 let () =
-  let program = handle_args in
-  tokenizer program |> parser2 [] vlookup 0 |> List.rev |> codegen head |> assemble "out.s"
+    let program = handle_args in
+    let tokens = tokenizer program in
+    let parsed, variables = parser2 [] [] tokens in
+    let reversed = List.rev parsed in
+    let generated = codegen (vargen variables head) reversed in
+    assemble "out.s" generated
