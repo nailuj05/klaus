@@ -1,3 +1,17 @@
-34 :a
+35 :a
 35 :b
 a b + puts
+
+a b == if {
+  42 puts
+} end
+
+69 puts
+
+# 0 :i
+
+# loop (10 i >) {
+#   i 1 + :i
+# }
+
+# i puts

@@ -1,4 +1,4 @@
-type cmpType = Equal | Less | More | Leq | Beq
+type cmpType = Equal | Neq | Less | Bigger | Leq | Beq
 type mode = Imm of int | Stack
 
 type token =
@@ -12,92 +12,15 @@ type token =
   | Div
   | Dup
   | Swap
-  | Cmp of (cmpType * string)
-  | Jmp of string
+  | If of string
+  | Cmp of cmpType
   | Load of string
   | Store of string
-  | Get of mode
-  | End
-  | Label of string
+  | End of string
+  | Exit 
 
 (*ASM Header*)
-let head =
-  "\n\
-   section .data\n\
-  \    nl db 10\n\n\
-   section .bss\n\
-  \    input resb 32\n\
-  \    number resq 1\n\n\
-   section .text\n\
-  \    global _start\n\n\
-   get:\n\
-  \    ; Read input\n\
-  \    mov rax, 0\n\
-  \    mov rdi, 0\n\
-  \    mov rsi, input\n\
-  \    mov rdx, 32\n\
-  \    syscall\n\n\
-  \    ; Convert string to integer\n\
-  \    mov rdi, input\n\
-  \    call atoi\n\
-  \    mov [number], rax\n\
-  \    ret\n\n\
-   puts:\n\
-  \    ; Print the number\n\
-  \    mov rdi, rax\n\
-  \    call print_int\n\
-  \  \n\
-  \    call newline\n\
-  \    ret\n\n\
-   newline:\n\
-  \    mov rax, 1\n\
-  \    mov rdi, 1\n\
-  \    mov rsi, nl\n\
-  \    mov rdx, 1\n\
-  \    syscall\n\
-  \    ret\n\n\
-   ; Function to convert ASCII string to integer\n\
-   atoi:\n\
-  \    xor rax, rax\n\
-  \    xor rcx, rcx\n\
-   .loop:\n\
-  \    movzx rdx, byte [rdi + rcx]\n\
-  \    cmp dl, '0'\n\
-  \    jb .done\n\
-  \    cmp dl, '9'\n\
-  \    ja .done\n\
-  \    sub dl, '0'\n\
-  \    imul rax, 10\n\
-  \    add rax, rdx\n\
-  \    inc rcx\n\
-  \    jmp .loop\n\
-   .done:\n\
-  \    ret\n\n\
-   ; Function to print an integer\n\
-   print_int:\n\
-  \    push rbp\n\
-  \    mov rbp, rsp\n\
-  \    sub rsp, 32\n\
-  \    mov qword [rbp-8], 0  ; NULL terminator\n\
-  \    mov rax, rdi\n\
-  \    mov rcx, 10\n\
-  \    mov rsi, rbp\n\
-   .loop:\n\
-  \    xor rdx, rdx\n\
-  \    div rcx\n\
-  \    add dl, '0'\n\
-  \    dec rsi\n\
-  \    mov [rsi], dl\n\
-  \    test rax, rax\n\
-  \    jnz .loop\n\
-  \    mov rax, 1\n\
-  \    mov rdi, 1\n\
-  \    mov rdx, rbp\n\
-  \    sub rdx, rsi\n\
-  \    syscall\n\
-  \    mov rsp, rbp\n\
-  \    pop rbp\n\
-  \    ret\n\n"
+let head = "ASMHEADER"
 
 let tail = "mov rax, 60\nxor rdi, rdi\nsyscall"
 let align = "\nmov rbp, rsp\nand rsp, -16 \n"
@@ -149,40 +72,52 @@ let is_var s = match s with
        Non
   | [] -> failwith "fuck"
 
-let rec parser2 ins (vl: string list) lex =
+let rec parser ins (vl: string list) ls lex =
   match lex with
-  | [] -> ins, vl
+  | [] -> if ls == 0 then ins, vl else failwith "conditions unmatched"
   | t :: ts -> (
     match t with
-    | "+" -> parser2 (Add :: ins) vl ts
-    | "-" -> parser2 (Sub :: ins) vl ts
-    | "*" -> parser2 (Mul :: ins) vl ts
-    | "/" -> parser2 (Div :: ins) vl ts
-    | "." -> parser2 (Pop :: ins) vl ts
-    | "end" -> parser2 (End :: ins) vl ts
-    | "dup" -> parser2 (Dup :: ins) vl ts
-    | "puts" -> parser2 (Puts :: ins) vl ts
-    | "read" -> parser2 (Read :: ins) vl ts
-    | "swap" -> parser2 (Swap :: ins) vl ts
+    | "" -> parser ins vl ls ts
+    | "{" -> parser ins vl ls ts (* add scoping for this in the future *)
+    | "}" -> parser ins vl ls ts
+    | "+" -> parser (Add :: ins) vl ls ts
+    | "-" -> parser (Sub :: ins) vl ls ts
+    | "*" -> parser (Mul :: ins) vl ls ts
+    | "/" -> parser (Div :: ins) vl ls ts
+    | "." -> parser (Pop :: ins) vl ls ts
+    | "<"  -> parser (Cmp Less   :: ins) vl ls ts
+    | "<=" -> parser (Cmp Leq    :: ins) vl ls ts
+    | ">"  -> parser (Cmp Bigger :: ins) vl ls ts
+    | ">=" -> parser (Cmp Beq    :: ins) vl ls ts
+    | "==" -> parser (Cmp Equal  :: ins) vl ls ts
+    | "!=" -> parser (Cmp Neq    :: ins) vl ls ts
+    | "if" -> parser (If ("end" ^ string_of_int ls) :: ins) vl (ls + 1) ts
+    | "end" -> let ls = ls - 1 in parser (End ("end" ^ string_of_int ls) :: ins) vl ls ts
+    | "dup" -> parser (Dup :: ins) vl ls ts
+    | "puts" -> parser (Puts :: ins) vl ls ts
+    | "read" -> parser (Read :: ins) vl ls ts
+    | "swap" -> parser (Swap :: ins) vl ls ts
+    | "exit" -> parser (Exit :: ins) vl ls ts
     | str -> match int_of_string_opt str with
                (*case 1: push new var onto the stack*)
-             | Some i -> parser2 (Push i :: ins) vl ts
+             | Some i -> parser (Push i :: ins) vl ls ts
                (*case 2: new var assignment or var usage*)
              | None -> match is_var (string_to_charl str) with
-                       | Def n -> parser2 (Store n :: ins) (n::vl) ts
-                       | Use n -> parser2 (Load n :: ins) vl ts
+                       | Def n -> parser (Store n :: ins) (n::vl) ls ts
+                       | Use n -> parser (Load n :: ins) vl ls ts
                        | Non -> failwith "illegal instruction"
   (*todo next: if/loop/break implementation and logic*)
   )
 
-let get_cmp_ins cmp label =
+let get_set_ins cmp =
   (match cmp with
-  | Equal -> "je " ^ label
-  | Leq -> "jle " ^ label
-  | Beq -> "jge " ^ label
-  | Less -> "jl " ^ label
-  | More -> "jg " ^ label)
-  ^ "\n"
+   | Neq    -> "setne al"
+   | Equal  -> "sete al"
+   | Leq    -> "setle al"
+   | Beq    -> "setge al"
+   | Less   -> "setl al"
+   | Bigger -> "setg al")
+  ^ "\nmovzx rax, al\n"
 
 let gen_push asm n = asm ^ "\nmov rax, " ^ string_of_int n ^ "\npush rax\n"
 let gen_pop asm = asm ^ "\npop rax\nxor rax, rax\n"
@@ -194,12 +129,11 @@ let gen_mul asm = asm ^ "\npop rax\npop rbx\nmul rbx\npush rax\n"
 let gen_div asm = asm ^ "\npop rax\npop rbx\ndiv rbx\npush rax\n"
 let gen_dup asm = asm ^ "\nmov rax, [rsp]\npush rax\n"
 let gen_swap asm = asm ^ "\npop rax\npop rbx\npush rax\npush rbx\n"
-let gen_end asm = asm ^ "\n" ^ tail ^ "\n"
-let gen_label asm label = asm ^ "\n" ^ label ^ ":\n"
-let gen_cmp asm cmp label = asm ^ "\nmov rax, [rsp]\nmov rbx, [rsp + 8]\ncmp rax, rbx\n" ^ get_cmp_ins cmp label
-let gen_jmp asm label = asm ^ "\njmp " ^ label ^ "\n"
-let gen_get_imm asm index = asm ^ "\nmov rax, [rsp + " ^ string_of_int (index * 8) ^ "]\npush rax\n"
-let gen_get asm = asm ^ "\nmov rax, [rsp]\nmov rax, [rsp + 8 * rax]\npush rax\n"
+let gen_exit asm = asm ^ "\n" ^ tail ^ "\n"
+let gen_end asm label = asm ^ "\n" ^ label ^ ":\n"
+let gen_cmp asm cmp = asm ^ "\nmov rbx, [rsp]\nmov rax, [rsp + 8]\ncmp rax, rbx\n" ^
+                              (get_set_ins cmp) ^ "push rax\n"
+let gen_jmp asm label = asm ^ "\npop rax\ntest rax, rax\njz " ^ label ^ "\n"
 let gen_load asm name = asm ^ "\nmov rax, qword [" ^ name ^ "]\npush rax\n"
 let gen_store asm name = asm ^ "\nmov rax, [rsp]\nmov qword [" ^ name ^ "], rax\n"
 
@@ -238,16 +172,19 @@ let rec codegen asm = function
       | Dup ->
           let asm' = gen_dup asm in
           codegen asm' ts
+      | End label ->
+         let asm' = gen_end asm label in
+         codegen asm' ts
       | Swap ->
           let asm' = gen_swap asm in
           codegen asm' ts
-      | End ->
-          let asm' = gen_end asm in
+      | Exit ->
+          let asm' = gen_exit asm in
           codegen asm' ts
-      | Cmp (cmp, label) ->
-          let asm' = gen_cmp asm cmp label in
+      | Cmp cmp ->
+          let asm' = gen_cmp asm cmp in
           codegen asm' ts
-      | Jmp label ->
+      | If label ->
           let asm' = gen_jmp asm label in
           codegen asm' ts
       | Load name ->
@@ -255,14 +192,8 @@ let rec codegen asm = function
          codegen asm' ts
       | Store name ->
          let asm' = gen_store asm name in
-         codegen asm' ts
-      | Get mode ->
-          let asm' = match mode with Stack -> gen_get asm | Imm i -> gen_get_imm asm i in
-          codegen asm' ts
-      | Label label ->
-          let asm' = gen_label asm label in
-          codegen asm' ts
-          (* | _ -> failwith "not implemented yet") *))
+         codegen asm' ts)
+      (* | _ -> failwith "not implemented yet") *)
   | [] -> asm
 
 let assemble file asm =
@@ -290,7 +221,8 @@ let handle_args : string =
 let () =
     let program = handle_args in
     let tokens = tokenizer program in
-    let parsed, variables = parser2 [] [] tokens in
+    let parsed, variables = parser [] [] 0 tokens in
     let reversed = List.rev parsed in
     let generated = codegen (vargen variables head) reversed in
     assemble "out.s" generated
+

@@ -5,7 +5,7 @@
 
   ;; Define Keywords for highlighting
   (setq klaus-font-lock-keywords
-        '(("\\<\\(if\\|else\\|loop\\|puts\\|read\\|dup\\|swap\\)\\>" . font-lock-keyword-face))) ; keywords
+        '(("\\<\\(if\\|else\\|loop\\|puts\\|end\\|read\\|dup\\|swap\\)\\>" . font-lock-keyword-face))) ; keywords
 
   ;; Apply the syntax highlighting
   (setq font-lock-defaults '((klaus-font-lock-keywords)))
