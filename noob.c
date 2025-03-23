@@ -8,7 +8,7 @@ int main(int argc, const char **argv) {
 								"\t-p keep preprocessed file")) exit(0);
 
 	// Preprocessing: replace asm header with actual asm from file
-	noob_string *head = noob_file_read("asm/head.S");
+	noob_string *head = noob_file_read("asm/newhead.S");
 	noob_string *src = noob_file_read("src/klaus.ml");
 	noob_string_replace(src, "ASMHEADER", head->buf);
 	noob_file_write("src/klausp.ml", src->buf);

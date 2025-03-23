@@ -1,17 +1,27 @@
-35 :a
-35 :b
-a b + puts
+# 35 :a
+# 35 :b
+# a b + puts
 
-a b == if {
-  42 puts
-} end
+# a b == if {
+#   42 puts
+# } end
 
-69 puts
+# 69 puts
 
-# 0 :i
+1 puts
+2 puts
+3 puts
+4 puts
+5 puts
+6 puts
+7 puts
+8 puts
+1111 puts
 
-# loop (10 i >) {
-#   i 1 + :i
-# }
+0 :i
+do i 10 < if {
+    i 1 + :i
+	 	i puts
+} loop end
+42 puts
 
-# i puts

@@ -16,21 +16,32 @@ type token =
   | Cmp of cmpType
   | Load of string
   | Store of string
+  | Loop of string
+  | EndLoop of string
   | End of string
   | Exit 
 
 (*ASM Header*)
 let head = "ASMHEADER"
 
-let tail = "mov rax, 60\nxor rdi, rdi\nsyscall"
+let tail = "\nand rsp, qword [_stack]\nmov rax, 60\nxor rdi, rdi\nsyscall"
 let align = "\nmov rbp, rsp\nand rsp, -16 \n"
 let restore = "\nmov rsp, rbp\n"
 
+let remove_comment s =
+  try
+    let index = String.index s '#' in
+    String.sub s 0 index
+  with Not_found -> s
+
 let tokenizer (program : string) : string list =
-  let lines = String.trim program |> String.split_on_char '\n' in
-  List.filter (fun s -> s <> "" && not (String.starts_with ~prefix:"#" s)) lines
-  |> List.map (fun s -> String.split_on_char ' ' s)
-  |> List.flatten
+  let lines = String.split_on_char '\n' program in
+  let clean_line line =
+    let line = remove_comment line in
+    String.split_on_char ' ' line
+    |> List.filter (fun s -> not (String.exists (fun c -> c = ' ' || c = '\t' || c = '\n') s))
+  in
+  List.concat (List.map clean_line lines)
 
 let extract_label x =
   if
@@ -72,40 +83,48 @@ let is_var s = match s with
        Non
   | [] -> failwith "fuck"
 
-let rec parser ins (vl: string list) ls lex =
+let rec parser ins (vl: string list) c lex =
   match lex with
-  | [] -> if ls == 0 then ins, vl else failwith "conditions unmatched"
+  | [] -> ins, vl, []
   | t :: ts -> (
     match t with
-    | "" -> parser ins vl ls ts
-    | "{" -> parser ins vl ls ts (* add scoping for this in the future *)
-    | "}" -> parser ins vl ls ts
-    | "+" -> parser (Add :: ins) vl ls ts
-    | "-" -> parser (Sub :: ins) vl ls ts
-    | "*" -> parser (Mul :: ins) vl ls ts
-    | "/" -> parser (Div :: ins) vl ls ts
-    | "." -> parser (Pop :: ins) vl ls ts
-    | "<"  -> parser (Cmp Less   :: ins) vl ls ts
-    | "<=" -> parser (Cmp Leq    :: ins) vl ls ts
-    | ">"  -> parser (Cmp Bigger :: ins) vl ls ts
-    | ">=" -> parser (Cmp Beq    :: ins) vl ls ts
-    | "==" -> parser (Cmp Equal  :: ins) vl ls ts
-    | "!=" -> parser (Cmp Neq    :: ins) vl ls ts
-    | "if" -> parser (If ("end" ^ string_of_int ls) :: ins) vl (ls + 1) ts
-    | "end" -> let ls = ls - 1 in parser (End ("end" ^ string_of_int ls) :: ins) vl ls ts
-    | "dup" -> parser (Dup :: ins) vl ls ts
-    | "puts" -> parser (Puts :: ins) vl ls ts
-    | "read" -> parser (Read :: ins) vl ls ts
-    | "swap" -> parser (Swap :: ins) vl ls ts
-    | "exit" -> parser (Exit :: ins) vl ls ts
+    | "" -> parser ins vl c ts
+    | "\n" -> parser ins vl c ts
+    | "\t" -> parser ins vl c ts
+    | "{" -> parser ins vl c ts (* add scoping for this in the future *)
+    | "}" -> parser ins vl c ts
+    | "." -> parser (Pop :: ins) vl c ts
+    | "puts" -> parser (Puts :: ins) vl c ts
+    | "read" -> parser (Read :: ins) vl c ts
+    | "+" -> parser (Add :: ins) vl c ts
+    | "-" -> parser (Sub :: ins) vl c ts
+    | "*" -> parser (Mul :: ins) vl c ts
+    | "/" -> parser (Div :: ins) vl c ts
+    | "dup" -> parser (Dup :: ins) vl c ts
+    | "swap" -> parser (Swap :: ins) vl c ts
+    | "if" -> let ins, vl, ts = parser (If ("end" ^ string_of_int c) :: ins) vl (c+1) ts in
+              parser (End ("end" ^ string_of_int c) :: ins) vl c ts
+    (* compares *)
+    | "<"  -> parser (Cmp Less   :: ins) vl c ts
+    | "<=" -> parser (Cmp Leq    :: ins) vl c ts
+    | ">"  -> parser (Cmp Bigger :: ins) vl c ts
+    | ">=" -> parser (Cmp Beq    :: ins) vl c ts
+    | "==" -> parser (Cmp Equal  :: ins) vl c ts
+    | "!=" -> parser (Cmp Neq    :: ins) vl c ts
+    | "loop" -> let ins, vl, ts = parser (Loop ("loop" ^ string_of_int c) :: ins) vl (c+1) ts in
+                parser (EndLoop ("loop" ^ string_of_int c) :: ins) vl c ts
+    | "endl" -> ins, vl, ts 
+    | "end" -> ins, vl, ts
+    | "exit" -> parser (Exit :: ins) vl c ts
+    (* Push and variables *)
     | str -> match int_of_string_opt str with
-               (*case 1: push new var onto the stack*)
-             | Some i -> parser (Push i :: ins) vl ls ts
-               (*case 2: new var assignment or var usage*)
+             (*case 1: push new var onto the stack*)
+             | Some i -> parser (Push i :: ins) vl c ts
+             (*case 2: new var assignment or var usage*)
              | None -> match is_var (string_to_charl str) with
-                       | Def n -> parser (Store n :: ins) (n::vl) ls ts
-                       | Use n -> parser (Load n :: ins) vl ls ts
-                       | Non -> failwith "illegal instruction"
+                       | Def n -> parser (Store n :: ins) (n::vl) c ts
+                       | Use n -> parser (Load n :: ins) vl c ts
+                       | Non -> print_endline str; failwith "illegal instruction"
   (*todo next: if/loop/break implementation and logic*)
   )
 
@@ -121,7 +140,7 @@ let get_set_ins cmp =
 
 let gen_push asm n = asm ^ "\nmov rax, " ^ string_of_int n ^ "\npush rax\n"
 let gen_pop asm = asm ^ "\npop rax\nxor rax, rax\n"
-let gen_puts asm = asm ^ "\nmov rax, [rsp]\n" ^ align ^ "\ncall puts\n\n" ^ restore
+let gen_puts asm = asm ^ "\nmov rax, [rsp]\n" ^ align ^ "\ncall print_int\n\n" ^ restore
 let gen_read asm = asm ^ align ^ "\ncall get\n" ^ restore ^ "push rax\n"
 let gen_add asm = asm ^ "\npop rax\npop rbx\nadd rax, rbx\npush rax\n"
 let gen_sub asm = asm ^ "\npop rbx\npop rax\nsub rax, rbx\npush rax\n"
@@ -129,18 +148,19 @@ let gen_mul asm = asm ^ "\npop rax\npop rbx\nmul rbx\npush rax\n"
 let gen_div asm = asm ^ "\npop rax\npop rbx\ndiv rbx\npush rax\n"
 let gen_dup asm = asm ^ "\nmov rax, [rsp]\npush rax\n"
 let gen_swap asm = asm ^ "\npop rax\npop rbx\npush rax\npush rbx\n"
-let gen_exit asm = asm ^ "\n" ^ tail ^ "\n"
-let gen_end asm label = asm ^ "\n" ^ label ^ ":\n"
+let gen_label asm label = asm ^ "\n" ^ label ^ ":\n"
 let gen_cmp asm cmp = asm ^ "\nmov rbx, [rsp]\nmov rax, [rsp + 8]\ncmp rax, rbx\n" ^
                               (get_set_ins cmp) ^ "push rax\n"
-let gen_jmp asm label = asm ^ "\npop rax\ntest rax, rax\njz " ^ label ^ "\n"
+let gen_jz asm label = asm ^ "\npop rax\ntest rax, rax\njz " ^ label ^ "\n"
+let gen_jmp asm label = asm ^ "\njmp " ^ label ^ "\n"
 let gen_load asm name = asm ^ "\nmov rax, qword [" ^ name ^ "]\npush rax\n"
 let gen_store asm name = asm ^ "\nmov rax, [rsp]\nmov qword [" ^ name ^ "], rax\n"
+let gen_exit asm = asm ^ "\n" ^ tail ^ "\n"
 
 let vargen vl asm =
   let f = (fun acc k -> acc ^ k ^ " dq 0\n") in
-  let sdata = List.fold_left f "" vl in
-  "section .data\n" ^ sdata ^ "\n" ^ head ^"\n_start:\n"
+  let sdata = List.sort_uniq compare vl |> List.fold_left f "" in
+  "section .data\n" ^ sdata ^ "\n" ^ head ^ "\n_start:\n" (* "\nmov qword [_stack], rsp\n" *)
   
 let rec codegen asm = function
   | t :: ts -> (
@@ -172,27 +192,33 @@ let rec codegen asm = function
       | Dup ->
           let asm' = gen_dup asm in
           codegen asm' ts
-      | End label ->
-         let asm' = gen_end asm label in
-         codegen asm' ts
       | Swap ->
           let asm' = gen_swap asm in
           codegen asm' ts
-      | Exit ->
-          let asm' = gen_exit asm in
+      | If label ->
+          let asm' = gen_jz asm label in
           codegen asm' ts
       | Cmp cmp ->
           let asm' = gen_cmp asm cmp in
-          codegen asm' ts
-      | If label ->
-          let asm' = gen_jmp asm label in
           codegen asm' ts
       | Load name ->
          let asm' = gen_load asm name in
          codegen asm' ts
       | Store name ->
          let asm' = gen_store asm name in
-         codegen asm' ts)
+         codegen asm' ts
+      | Loop label ->
+         let asm' = gen_label asm label in
+         codegen asm' ts
+      | EndLoop label ->
+         let asm' = gen_jmp asm label in
+         codegen asm' ts
+      | End label ->
+         let asm' = gen_label asm label in
+         codegen asm' ts
+      | Exit ->
+          let asm' = gen_exit asm in
+          codegen asm' ts)
       (* | _ -> failwith "not implemented yet") *)
   | [] -> asm
 
@@ -200,7 +226,7 @@ let assemble file asm =
   let oc = open_out file in
   Printf.fprintf oc "%s\n" (asm ^ tail);
   close_out oc;
-  match Sys.command "nasm -f elf64 -o out.o out.s" with
+  match Sys.command "nasm -f elf64 -g -F dwarf -o out.o out.s" with
   | 0 -> ( match Sys.command "ld -o out out.o -e _start" with 0 -> () | _ -> failwith "linking failed")
   | _ -> failwith "assembly failed"
 
@@ -221,7 +247,7 @@ let handle_args : string =
 let () =
     let program = handle_args in
     let tokens = tokenizer program in
-    let parsed, variables = parser [] [] 0 tokens in
+    let parsed, variables, _ = parser [] [] 0 tokens in
     let reversed = List.rev parsed in
     let generated = codegen (vargen variables head) reversed in
     assemble "out.s" generated

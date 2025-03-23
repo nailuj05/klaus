@@ -1,4 +1,5 @@
-section .data 
+section .data
+		_stack dq 0
     nl db 10 
 section .bss 
     input resb 32 
