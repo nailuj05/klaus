@@ -83,47 +83,58 @@ let is_var s = match s with
        Non
   | [] -> failwith "fuck"
 
-let rec parser ins (vl: string list) c lex =
+type contextstack = Loop of int | LoopIf of int | If of int
+
+let get_if_context = function
+  | [] -> If(0)
+  | c::cs -> match c with
+             | Loop c -> LoopIf(c)
+             | LoopIf c -> If(c+1)
+             | If c -> If(c+1)
+
+let rec parser ins (vl: string list) cs lex =
   match lex with
   | [] -> ins, vl, []
   | t :: ts -> (
     match t with
-    | "" -> parser ins vl c ts
-    | "\n" -> parser ins vl c ts
-    | "\t" -> parser ins vl c ts
-    | "{" -> parser ins vl c ts (* add scoping for this in the future *)
-    | "}" -> parser ins vl c ts
-    | "." -> parser (Pop :: ins) vl c ts
-    | "puts" -> parser (Puts :: ins) vl c ts
-    | "read" -> parser (Read :: ins) vl c ts
-    | "+" -> parser (Add :: ins) vl c ts
-    | "-" -> parser (Sub :: ins) vl c ts
-    | "*" -> parser (Mul :: ins) vl c ts
-    | "/" -> parser (Div :: ins) vl c ts
-    | "dup" -> parser (Dup :: ins) vl c ts
-    | "swap" -> parser (Swap :: ins) vl c ts
-    | "if" -> let ins, vl, ts = parser (If ("end" ^ string_of_int c) :: ins) vl (c+1) ts in
-              parser (End ("end" ^ string_of_int c) :: ins) vl c ts
+    | "" -> parser ins vl cs ts
+    | "\n" -> parser ins vl cs ts
+    | "\t" -> parser ins vl cs ts
+    | "{" -> parser ins vl cs ts (* add scoping for this in the future *)
+    | "}" -> parser ins vl cs ts
+    | "." -> parser (Pop :: ins) vl cs ts
+    | "puts" -> parser (Puts :: ins) vl cs ts
+    | "read" -> parser (Read :: ins) vl cs ts
+    | "+" -> parser (Add :: ins) vl cs ts
+    | "-" -> parser (Sub :: ins) vl cs ts
+    | "*" -> parser (Mul :: ins) vl cs ts
+    | "/" -> parser (Div :: ins) vl cs ts
+    | "dup" -> parser (Dup :: ins) vl cs ts
+    | "swap" -> parser (Swap :: ins) vl cs ts
+    | "if" -> let con(n) = get_if_context cs in
+              let ins, vl, ts = parser (If ("end" ^ string_of_int c) :: ins) vl (con::cs) ts in
+              match con with
+              | LoopIf -> ins, vl, ts
+              | _ -> parser (End ("end" ^ string_of_int n) :: ins) vl cs ts
     (* compares *)
-    | "<"  -> parser (Cmp Less   :: ins) vl c ts
-    | "<=" -> parser (Cmp Leq    :: ins) vl c ts
-    | ">"  -> parser (Cmp Bigger :: ins) vl c ts
-    | ">=" -> parser (Cmp Beq    :: ins) vl c ts
-    | "==" -> parser (Cmp Equal  :: ins) vl c ts
-    | "!=" -> parser (Cmp Neq    :: ins) vl c ts
-    | "loop" -> let ins, vl, ts = parser (Loop ("loop" ^ string_of_int c) :: ins) vl (c+1) ts in
-                parser (EndLoop ("loop" ^ string_of_int c) :: ins) vl c ts
-    | "endl" -> ins, vl, ts 
+    | "<"  -> parser (Cmp Less   :: ins) vl cs ts
+    | "<=" -> parser (Cmp Leq    :: ins) vl cs ts
+    | ">"  -> parser (Cmp Bigger :: ins) vl cs ts
+    | ">=" -> parser (Cmp Beq    :: ins) vl cs ts
+    | "==" -> parser (Cmp Equal  :: ins) vl cs ts
+    | "!=" -> parser (Cmp Neq    :: ins) vl cs ts
+    | "loop" -> let ins, vl, ts = parser (Loop ("loop" ^ string_of_int c) :: ins) vl (Loop(c)::cs) ts in
+                parser (EndLoop ("loop" ^ string_of_int c) :: ins) vl cs ts
     | "end" -> ins, vl, ts
-    | "exit" -> parser (Exit :: ins) vl c ts
+    | "exit" -> parser (Exit :: ins) vl cs ts
     (* Push and variables *)
     | str -> match int_of_string_opt str with
              (*case 1: push new var onto the stack*)
-             | Some i -> parser (Push i :: ins) vl c ts
+             | Some i -> parser (Push i :: ins) vl cs ts
              (*case 2: new var assignment or var usage*)
              | None -> match is_var (string_to_charl str) with
-                       | Def n -> parser (Store n :: ins) (n::vl) c ts
-                       | Use n -> parser (Load n :: ins) vl c ts
+                       | Def n -> parser (Store n :: ins) (n::vl) cs ts
+                       | Use n -> parser (Load n :: ins) vl cs ts
                        | Non -> print_endline str; failwith "illegal instruction"
   (*todo next: if/loop/break implementation and logic*)
   )

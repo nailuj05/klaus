@@ -19,9 +19,9 @@
 1111 puts
 
 0 :i
-do i 10 < if {
+loop i 10 < if {
     i 1 + :i
 	 	i puts
-} loop end
+} end
 42 puts
 
