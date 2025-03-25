@@ -1,0 +1,25 @@
+# -- Scopes and Spaces -- #
+
+# Scopes allow you to do stuff without worrying about the stack.
+# at the end of a scope (declared through "{" and "}") the stack is reset.
+
+1337 puts
+{
+	21 21 + puts
+	{
+		66 puts
+	}
+	puts
+}
+puts
+
+# Spaces work similarly to scopes, but they will keep the top of the stack
+# This is handy for loop conditions, ifs or side calculations
+
+42
+( 4 3 1 + + puts ) puts # this will print 8 8
+
+42
+{ 4 3 1 + + puts } puts # where as this will print 8 42
+
+# both scopes and spaces are mostly syntactic sugar, but they allow you to write more concise (and readable code)

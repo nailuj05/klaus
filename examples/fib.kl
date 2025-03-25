@@ -1,29 +1,19 @@
-# Fibonacci Sequence
-Read
-Push 1
-Push 1
+# -- Fibonacci Sequence -- #
 
-# Loop compare
-:loop
-Get 2
-Push 2
-Cmp > :end
+# base
+read :n
+0 1
 
-# Loop body
-Pop
-Push 1
-Sub
+# edge case n = 0
+{ n 0 == if 0 puts exit end }
 
-Get 1
-Get 3
-Get 3
-Add
+# loop
+loop
+		# decrement n and exit if 0
+		( n 1 - :n 0 n >= ) if break end
+		:prev +
+		prev swap
+end
 
-Jmp :loop
-
-# Loop End
-:end
-Pop
-Pop
-Puts
-End
+# result
+puts

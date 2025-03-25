@@ -1,11 +1,14 @@
-Push 0
-Push 1
-Push 2
+# -- Arithmatic -- #
 
-Add
-Puts
+# simple arithmatic can be done like this
+1 2 + puts
 
-Push 5
-Dup
-Mul
-Puts
+# reverse polish notation turns this (1 + 3) * (2 + 3) = 20 into this:
+1 3 + 2 3 + * puts
+
+# all standard operands are implemented (+,+,*,/,%)
+3 1 - 5 * 2 / puts
+
+100 5 / puts
+
+13 4 % puts

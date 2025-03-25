@@ -1,0 +1,17 @@
+# -- Swapping and Duplicating -- #
+
+# puts 1 2 3 onto the stack, then swaps resulting in 1 3 2
+1 2 3 swap
+puts
+
+# popping the top of the stack and swapping again leaves us with 3 1
+.
+swap
+puts
+
+# and finally with just 3
+.
+puts
+
+# duplicating does just what you think it would, duplicate the top of the stack
+42 dup puts . puts

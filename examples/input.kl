@@ -1,0 +1,4 @@
+# -- Input -- #
+
+# input is read using "read" from stdin, klaus only supports integer values
+read read + puts
